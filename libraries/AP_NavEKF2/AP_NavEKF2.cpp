@@ -1,9 +1,10 @@
 #include <AP_HAL/AP_HAL.h>
+#if HAL_CPU_CLASS >= HAL_CPU_CLASS_150
 
 #include "AP_NavEKF2_core.h"
 #include <AP_Vehicle/AP_Vehicle.h>
 #include <GCS_MAVLink/GCS.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include <new>
 
 /*
@@ -35,7 +36,6 @@
 #define FLOW_M_NSE_DEFAULT      0.25f
 #define FLOW_I_GATE_DEFAULT     300
 #define CHECK_SCALER_DEFAULT    100
-#define FLOW_USE_DEFAULT        1
 
 #elif APM_BUILD_TYPE(APM_BUILD_APMrover2)
 // rover defaults
@@ -61,7 +61,6 @@
 #define FLOW_M_NSE_DEFAULT      0.25f
 #define FLOW_I_GATE_DEFAULT     300
 #define CHECK_SCALER_DEFAULT    100
-#define FLOW_USE_DEFAULT        1
 
 #elif APM_BUILD_TYPE(APM_BUILD_ArduPlane)
 // plane defaults
@@ -84,10 +83,9 @@
 #define MAG_CAL_DEFAULT         0
 #define GLITCH_RADIUS_DEFAULT   25
 #define FLOW_MEAS_DELAY         10
-#define FLOW_M_NSE_DEFAULT      0.15f
-#define FLOW_I_GATE_DEFAULT     500
+#define FLOW_M_NSE_DEFAULT      0.25f
+#define FLOW_I_GATE_DEFAULT     300
 #define CHECK_SCALER_DEFAULT    150
-#define FLOW_USE_DEFAULT        2
 
 #else
 // build type not specified, use copter defaults
@@ -113,7 +111,6 @@
 #define FLOW_M_NSE_DEFAULT      0.25f
 #define FLOW_I_GATE_DEFAULT     300
 #define CHECK_SCALER_DEFAULT    100
-#define FLOW_USE_DEFAULT        1
 
 #endif // APM_BUILD_DIRECTORY
 
@@ -371,7 +368,7 @@ const AP_Param::GroupInfo NavEKF2::var_info[] = {
     // @Param: ABIAS_P_NSE
     // @DisplayName: Accelerometer bias stability (m/s^3)
     // @Description: This noise controls the growth of the vertical accelerometer delta velocity bias state error estimate. Increasing it makes accelerometer bias estimation faster and noisier.
-    // @Range: 0.00001 0.005
+    // @Range: 0.00001 0.001
     // @User: Advanced
     // @Units: m/s/s/s
     AP_GROUPINFO("ABIAS_P_NSE", 28, NavEKF2, _accelBiasProcessNoise, ABIAS_P_NSE_DEFAULT),
@@ -489,7 +486,7 @@ const AP_Param::GroupInfo NavEKF2::var_info[] = {
 
     // @Param: TERR_GRAD
     // @DisplayName: Maximum terrain gradient
-    // @Description: Specifies the maximum gradient of the terrain below the vehicle assumed when it is fusing range finder or optical flow to estimate terrain height.
+    // @Description: Specifies the maximum gradient of the terrain below the vehicle when it is using range finder as a height reference
     // @Range: 0 0.2
     // @Increment: 0.01
     // @User: Advanced
@@ -547,24 +544,6 @@ const AP_Param::GroupInfo NavEKF2::var_info[] = {
     // @RebootRequired: True
     AP_GROUPINFO("OGN_HGT_MASK", 49, NavEKF2, _originHgtMode, 0),
 
-    // @Param: EXTNAV_DELAY
-    // @DisplayName: external navigation system measurement delay (msec)
-    // @Description: This is the number of msec that the external navigation system measurements lag behind the inertial measurements.
-    // @Range: 0 127
-    // @Increment: 1
-    // @User: Advanced
-    // @Units: ms
-    // @RebootRequired: True
-    AP_GROUPINFO("EXTNAV_DELAY", 50, NavEKF2, _extnavDelay_ms, 10),
-
-    // @Param: FLOW_USE
-    // @DisplayName: Optical flow use bitmask
-    // @Description: Controls if the optical flow data is fused into the 24-state navigation estimator OR the 1-state terrain height estimator.
-    // @User: Advanced
-    // @Values: 0:None,1:Navigation,2:Terrain
-    // @RebootRequired: True
-    AP_GROUPINFO("FLOW_USE", 51, NavEKF2, _flowUse, FLOW_USE_DEFAULT),
-
     AP_GROUPEND
 };
 
@@ -584,24 +563,24 @@ void NavEKF2::check_log_write(void)
         return;
     }
     if (logging.log_compass) {
-        AP::logger().Write_Compass(imuSampleTime_us);
+        DataFlash_Class::instance()->Log_Write_Compass(imuSampleTime_us);
         logging.log_compass = false;
     }
     if (logging.log_gps) {
-        AP::logger().Write_GPS(AP::gps().primary_sensor(), imuSampleTime_us);
+        DataFlash_Class::instance()->Log_Write_GPS(AP::gps().primary_sensor(), imuSampleTime_us);
         logging.log_gps = false;
     }
     if (logging.log_baro) {
-        AP::logger().Write_Baro(imuSampleTime_us);
+        DataFlash_Class::instance()->Log_Write_Baro(imuSampleTime_us);
         logging.log_baro = false;
     }
     if (logging.log_imu) {
-        AP::logger().Write_IMUDT(imuSampleTime_us, _logging_mask.get());
+        DataFlash_Class::instance()->Log_Write_IMUDT(imuSampleTime_us, _logging_mask.get());
         logging.log_imu = false;
     }
 
     // this is an example of an ad-hoc log in EKF
-    // AP::logger().Write("NKA", "TimeUS,X", "Qf", AP_HAL::micros64(), (double)2.4f);
+    // DataFlash_Class::instance()->Log_Write("NKA", "TimeUS,X", "Qf", AP_HAL::micros64(), (double)2.4f);
 }
 
 
@@ -622,9 +601,9 @@ bool NavEKF2::InitialiseFilter(void)
     _framesPerPrediction = uint8_t((EKF_TARGET_DT / (_frameTimeUsec * 1.0e-6) + 0.5));
 
     // see if we will be doing logging
-    AP_Logger *logger = AP_Logger::get_singleton();
-    if (logger != nullptr) {
-        logging.enabled = logger->log_replay();
+    DataFlash_Class *dataflash = DataFlash_Class::instance();
+    if (dataflash != nullptr) {
+        logging.enabled = dataflash->log_replay();
     }
     
     if (core == nullptr) {
@@ -741,7 +720,7 @@ void NavEKF2::UpdateFilter(void)
                 // If the primary core is still healthy,then switching is optional and will only be done if
                 // a core with a significantly lower error score can be found
                 float altErrorScore = core[coreIndex].errorScore();
-                if (altCoreAvailable && (!core[newPrimaryIndex].healthy() || altErrorScore < lowestErrorScore)) {
+                if (altCoreAvailable && (!core[primary].healthy() || altErrorScore < lowestErrorScore)) {
                     newPrimaryIndex = coreIndex;
                     lowestErrorScore = altErrorScore;
                 }
@@ -766,19 +745,6 @@ bool NavEKF2::healthy(void) const
         return false;
     }
     return core[primary].healthy();
-}
-
-bool NavEKF2::all_cores_healthy(void) const
-{
-    if (!core) {
-        return false;
-    }
-    for (uint8_t i = 0; i < num_cores; i++) {
-        if (!core[i].healthy()) {
-            return false;
-        }
-    }
-    return true;
 }
 
 // returns the index of the primary core
@@ -838,7 +804,7 @@ void NavEKF2::getVelNED(int8_t instance, Vector3f &vel) const
 float NavEKF2::getPosDownDerivative(int8_t instance) const
 {
     if (instance < 0 || instance >= num_cores) instance = primary;
-    // return the value calculated from a complementary filter applied to the EKF height and vertical acceleration
+    // return the value calculated from a complementary filer applied to the EKF height and vertical acceleration
     if (core) {
         return core[instance].getPosDownDerivative();
     }
@@ -1015,7 +981,7 @@ bool NavEKF2::getLLH(struct Location &loc) const
 }
 
 // Return the latitude and longitude and height used to set the NED origin for the specified instance
-// An out of range instance (eg -1) returns data for the primary instance
+// An out of range instance (eg -1) returns data for the the primary instance
 // All NED positions calculated by the filter are relative to this location
 // Returns false if the origin has not been set
 bool NavEKF2::getOriginLLH(int8_t instance, struct Location &loc) const
@@ -1067,17 +1033,6 @@ void NavEKF2::getRotationBodyToNED(Matrix3f &mat) const
 }
 
 // return the quaternions defining the rotation from NED to XYZ (body) axes
-void NavEKF2::getQuaternionBodyToNED(int8_t instance, Quaternion &quat) const
-{
-    if (instance < 0 || instance >= num_cores) instance = primary;
-    if (core) {
-        Matrix3f mat;
-        core[instance].getRotationBodyToNED(mat);
-        quat.from_rotation_matrix(mat);
-    }
-}
-
-// return the quaternions defining the rotation from NED to XYZ (autopilot) axes
 void NavEKF2::getQuaternion(int8_t instance, Quaternion &quat) const
 {
     if (instance < 0 || instance >= num_cores) instance = primary;
@@ -1374,13 +1329,7 @@ const char *NavEKF2::prearm_failure_reason(void) const
     if (!core) {
         return nullptr;
     }
-    for (uint8_t i = 0; i < num_cores; i++) {
-        const char * failure = core[i].prearm_failure_reason();
-        if (failure != nullptr) {
-            return failure;
-        }
-    }
-    return nullptr;
+    return core[primary].prearm_failure_reason();
 }
 
 // Returns the amount of vertical position change due to the last reset or core switch in metres
@@ -1518,7 +1467,7 @@ void NavEKF2::getTimingStatistics(int8_t instance, struct ekf_timing &timing) co
  * Write position and quaternion data from an external navigation system
  *
  * pos        : XYZ position (m) in a RH navigation frame with the Z axis pointing down and XY axes horizontal. Frame must be aligned with NED if the magnetomer is being used for yaw.
- * quat       : quaternion describing the rotation from navigation frame to body frame
+ * quat       : quaternion describing the the rotation from navigation frame to body frame
  * posErr     : 1-sigma spherical position error (m)
  * angErr     : 1-sigma spherical angle error (rad)
  * timeStamp_ms : system time the measurement was taken, not the time it was received (mSec)
@@ -1534,3 +1483,4 @@ void NavEKF2::writeExtNavData(const Vector3f &sensOffset, const Vector3f &pos, c
     }
 }
 
+#endif //HAL_CPU_CLASS

@@ -1,5 +1,10 @@
 #pragma once
 
+// Command/Waypoint/Location Options Bitmask
+//--------------------
+#define MASK_OPTIONS_RELATIVE_ALT       (1<<0)          // 1 = Relative
+                                                        // altitude
+
 // Controller modes
 // ----------------
 

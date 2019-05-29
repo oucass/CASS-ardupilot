@@ -1,9 +1,5 @@
-#include "AC_Sprayer.h"
-
-#include <AP_AHRS/AP_AHRS.h>
 #include <AP_HAL/AP_HAL.h>
-#include <AP_Math/AP_Math.h>
-#include <SRV_Channel/SRV_Channel.h>
+#include "AC_Sprayer.h"
 
 extern const AP_HAL::HAL& hal;
 
@@ -54,13 +50,13 @@ const AP_Param::GroupInfo AC_Sprayer::var_info[] = {
 
 AC_Sprayer::AC_Sprayer()
 {
-    if (_singleton) {
+    if (_s_instance) {
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
         AP_HAL::panic("Too many sprayers");
 #endif
         return;
     }
-    _singleton = this;
+    _s_instance = this;
 
     AP_Param::setup_object_defaults(this, var_info);
 
@@ -78,10 +74,10 @@ AC_Sprayer::AC_Sprayer()
 /*
  * Get the AP_Sprayer singleton
  */
-AC_Sprayer *AC_Sprayer::_singleton;
-AC_Sprayer *AC_Sprayer::get_singleton()
+AC_Sprayer *AC_Sprayer::_s_instance = nullptr;
+AC_Sprayer *AC_Sprayer::get_instance()
 {
-    return _singleton;
+    return _s_instance;
 }
 
 void AC_Sprayer::run(const bool true_false)
@@ -194,7 +190,7 @@ namespace AP {
 
 AC_Sprayer *sprayer()
 {
-    return AC_Sprayer::get_singleton();
+    return AC_Sprayer::get_instance();
 }
 
 };

@@ -9,7 +9,8 @@
 #include <AP_Param/AP_Param.h>
 
 #include "definitions.h"
-#include "crc.h"
+#include "edc.h"
+#include "location.h"
 #include "matrix3.h"
 #include "polygon.h"
 #include "quaternion.h"
@@ -17,7 +18,6 @@
 #include "vector2.h"
 #include "vector3.h"
 #include "spline5.h"
-#include "location.h"
 
 // define AP_Param types AP_Vector3f and Ap_Matrix3f
 AP_PARAMDEFV(Vector3f, Vector3f, AP_PARAM_VECTOR3F);
@@ -174,8 +174,7 @@ static inline constexpr float degrees(float rad)
 template<typename T>
 float sq(const T val)
 {
-    float v = static_cast<float>(val);
-    return v*v;
+    return powf(static_cast<float>(val), 2);
 }
 
 /*
@@ -246,19 +245,6 @@ inline uint32_t usec_to_hz(uint32_t usec)
 float linear_interpolate(float low_output, float high_output,
                          float var_value,
                          float var_low, float var_high);
-
-/* cubic "expo" curve generator 
- * alpha range: [0,1] min to max expo
- * input range: [-1,1]
- */
-float expo_curve(float alpha, float input);
-
-/* throttle curve generator
- * thr_mid: output at mid stick
- * alpha: expo coefficient
- * thr_in: [0-1]
- */
-float throttle_curve(float thr_mid, float alpha, float thr_in);
 
 /* simple 16 bit random number generator */
 uint16_t get_random16(void);

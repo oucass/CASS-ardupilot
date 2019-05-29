@@ -18,7 +18,7 @@
 #define WPNAV_WP_SPEED_MIN               20.0f      // minimum horizontal speed between waypoints in cm/s
 #define WPNAV_WP_TRACK_SPEED_MIN         50.0f      // minimum speed along track of the target point the vehicle is chasing in cm/s (used as target slows down before reaching destination)
 #define WPNAV_WP_RADIUS                 200.0f      // default waypoint radius in cm
-#define WPNAV_WP_RADIUS_MIN               5.0f      // minimum waypoint radius in cm
+#define WPNAV_WP_RADIUS_MIN              10.0f      // minimum waypoint radius in cm
 
 #define WPNAV_WP_SPEED_UP               250.0f      // default maximum climb velocity
 #define WPNAV_WP_SPEED_DOWN             150.0f      // default maximum descent velocity
@@ -57,9 +57,6 @@ public:
     /// provide rangefinder altitude
     void set_rangefinder_alt(bool use, bool healthy, float alt_cm) { _rangefinder_available = use; _rangefinder_healthy = healthy; _rangefinder_alt_cm = alt_cm; }
 
-    // return true if range finder may be used for terrain following
-    bool rangefinder_used() const { return _rangefinder_use && _rangefinder_healthy; }
-
     ///
     /// brake controller
     ///
@@ -78,21 +75,20 @@ public:
     ///     should be called once before the waypoint controller is used but does not need to be called before subsequent updates to destination
     void wp_and_spline_init();
 
-    /// set current target horizontal speed during wp navigation
+    /// set_speed_xy - allows main code to pass target horizontal velocity for wp navigation
     void set_speed_xy(float speed_cms);
 
-    /// set current target climb or descent rate during wp navigation
-    void set_speed_up(float speed_up_cms);
-    void set_speed_down(float speed_down_cms);
+    /// set_speed_z - allows main code to pass target vertical velocity for wp navigation
+    void set_speed_z(float speed_down_cms, float speed_up_cms);
 
-    /// get default target horizontal velocity during wp navigation
-    float get_default_speed_xy() const { return _wp_speed_cms; }
+    /// get_speed_xy - allows main code to retrieve target horizontal velocity for wp navigation
+    float get_speed_xy() const { return _wp_speed_cms; }
 
-    /// get default target climb speed in cm/s during missions
-    float get_default_speed_up() const { return _wp_speed_up_cms; }
+    /// get_speed_up - returns target climb speed in cm/s during missions
+    float get_speed_up() const { return _wp_speed_up_cms; }
 
-    /// get default target descent rate in cm/s during missions.  Note: always positive
-    float get_default_speed_down() const { return _wp_speed_down_cms; }
+    /// get_speed_down - returns target descent speed in cm/s during missions.  Note: always positive
+    float get_speed_down() const { return _wp_speed_down_cms; }
 
     /// get_speed_z - returns target descent speed in cm/s during missions.  Note: always positive
     float get_accel_z() const { return _wp_accel_z_cmss; }
@@ -106,17 +102,14 @@ public:
     /// get origin using position vector (distance from ekf origin in cm)
     const Vector3f &get_wp_origin() const { return _origin; }
 
-    /// true if origin.z and destination.z are alt-above-terrain, false if alt-above-ekf-origin
-    bool origin_and_destination_are_terrain_alt() const { return _terrain_alt; }
-
     /// set_wp_destination waypoint using location class
     ///     returns false if conversion from location to vector from ekf origin cannot be calculated
-    bool set_wp_destination(const Location& destination);
+    bool set_wp_destination(const Location_Class& destination);
 
     // returns wp location using location class.
     // returns false if unable to convert from target vector to global
     // coordinates
-    bool get_wp_destination(Location& destination);
+    bool get_wp_destination(Location_Class& destination);
 
     /// set_wp_destination waypoint using position vector (distance from ekf origin in cm)
     ///     terrain_alt should be true if destination.z is a desired altitude above terrain
@@ -191,7 +184,7 @@ public:
     ///     stopped_at_start should be set to true if vehicle is stopped at the origin
     ///     seg_end_type should be set to stopped, straight or spline depending upon the next segment's type
     ///     next_destination should be set to the next segment's destination if the seg_end_type is SEGMENT_END_STRAIGHT or SEGMENT_END_SPLINE
-    bool set_spline_destination(const Location& destination, bool stopped_at_start, spline_segment_end_type seg_end_type, Location next_destination);
+    bool set_spline_destination(const Location_Class& destination, bool stopped_at_start, spline_segment_end_type seg_end_type, Location_Class next_destination);
 
     /// set_spline_destination waypoint using position vector (distance from ekf origin in cm)
     ///     returns false if conversion from location to vector from ekf origin cannot be calculated
@@ -220,8 +213,8 @@ public:
     ///
 
     /// get desired roll, pitch which should be fed into stabilize controllers
-    float get_roll() const { return _pos_control.get_roll(); }
-    float get_pitch() const { return _pos_control.get_pitch(); }
+    int32_t get_roll() const { return _pos_control.get_roll(); }
+    int32_t get_pitch() const { return _pos_control.get_pitch(); }
 
     /// advance_wp_target_along_track - move target location along track from origin to destination
     bool advance_wp_target_along_track(float dt);
@@ -274,7 +267,7 @@ protected:
 
     // convert location to vector from ekf origin.  terrain_alt is set to true if resulting vector's z-axis should be treated as alt-above-terrain
     //      returns false if conversion failed (likely because terrain data was not available)
-    bool get_vector_NEU(const Location &loc, Vector3f &vec, bool &terrain_alt);
+    bool get_vector_NEU(const Location_Class &loc, Vector3f &vec, bool &terrain_alt);
 
     // set heading used for spline and waypoint navigation
     void set_yaw_cd(float heading_cd);
@@ -284,19 +277,20 @@ protected:
     const AP_AHRS_View&     _ahrs;
     AC_PosControl&          _pos_control;
     const AC_AttitudeControl& _attitude_control;
-    AP_Terrain              *_terrain;
-    AC_Avoid                *_avoid;
+    AP_Terrain              *_terrain = nullptr;
+    AC_Avoid                *_avoid = nullptr;
 
     // parameters
-    AP_Float    _wp_speed_cms;          // default maximum horizontal speed in cm/s during missions
-    AP_Float    _wp_speed_up_cms;       // default maximum climb rate in cm/s
-    AP_Float    _wp_speed_down_cms;     // default maximum descent rate in cm/s
+    AP_Float    _wp_speed_cms;          // maximum horizontal speed in cm/s during missions
+    AP_Float    _wp_speed_up_cms;       // climb speed target in cm/s
+    AP_Float    _wp_speed_down_cms;     // descent speed target in cm/s
     AP_Float    _wp_radius_cm;          // distance from a waypoint in cm that, when crossed, indicates the wp has been reached
     AP_Float    _wp_accel_cmss;          // horizontal acceleration in cm/s/s during missions
     AP_Float    _wp_accel_z_cmss;        // vertical acceleration in cm/s/s during missions
 
     // waypoint controller internal variables
     uint32_t    _wp_last_update;        // time of last update_wpnav call
+    uint8_t     _wp_step;               // used to decide which portion of wpnav controller to run during this iteration
     Vector3f    _origin;                // starting point of trip to next waypoint in cm from ekf origin
     Vector3f    _destination;           // target destination in cm from ekf origin
     Vector3f    _pos_delta_unit;        // each axis's percentage of the total track from origin to destination
@@ -320,9 +314,10 @@ protected:
     float       _yaw;                   // heading according to yaw
 
     // terrain following variables
-    bool        _terrain_alt;   // true if origin and destination.z are alt-above-terrain, false if alt-above-ekf-origin
+    bool        _terrain_alt = false;   // true if origin and destination.z are alt-above-terrain, false if alt-above-ekf-origin
+    bool        _ekf_origin_terrain_alt_set = false;
     bool        _rangefinder_available;
     AP_Int8     _rangefinder_use;
-    bool        _rangefinder_healthy;
-    float       _rangefinder_alt_cm;
+    bool        _rangefinder_healthy = false;
+    float       _rangefinder_alt_cm = 0.0f;
 };

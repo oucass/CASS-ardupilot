@@ -21,7 +21,7 @@
 #include <utility>
 #include <AP_Math/AP_Math.h>
 #include <stdio.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 
 extern const AP_HAL::HAL &hal;
 
@@ -220,11 +220,11 @@ void AP_Compass_MMC3416::timer()
             have_initial_offset = true;
         } else {
             // low pass changes to the offset
-            offset = offset * 0.95f + new_offset * 0.05f;
+            offset = offset * 0.95 + new_offset * 0.05;
         }
 
 #if 0
-        AP::logger().Write("MMO", "TimeUS,Nx,Ny,Nz,Ox,Oy,Oz", "Qffffff",
+        DataFlash_Class::instance()->Log_Write("MMO", "TimeUS,Nx,Ny,Nz,Ox,Oy,Oz", "Qffffff",
                                                AP_HAL::micros64(),
                                                (double)new_offset.x,
                                                (double)new_offset.y,

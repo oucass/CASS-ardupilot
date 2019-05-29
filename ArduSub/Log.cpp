@@ -2,7 +2,7 @@
 
 #if LOGGING_ENABLED == ENABLED
 
-// Code to Write and Read packets from AP_Logger log memory
+// Code to Write and Read packets from DataFlash log memory
 // Code to interact with the user to dump or erase logs
 
 struct PACKED log_Control_Tuning {
@@ -47,7 +47,7 @@ void Sub::Log_Write_Control_Tuning()
         target_climb_rate   : (int16_t)pos_control.get_vel_target_z(),
         climb_rate          : climb_rate
     };
-    logger.WriteBlock(&pkt, sizeof(pkt));
+    DataFlash.WriteBlock(&pkt, sizeof(pkt));
 }
 
 // Write an attitude packet
@@ -55,14 +55,14 @@ void Sub::Log_Write_Attitude()
 {
     Vector3f targets = attitude_control.get_att_target_euler_cd();
     targets.z = wrap_360_cd(targets.z);
-    logger.Write_Attitude(ahrs, targets);
+    DataFlash.Log_Write_Attitude(ahrs, targets);
 
-    logger.Write_EKF(ahrs);
-    logger.Write_AHRS2(ahrs);
+    DataFlash.Log_Write_EKF(ahrs);
+    DataFlash.Log_Write_AHRS2(ahrs);
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    sitl.Log_Write_SIMSTATE();
+    sitl.Log_Write_SIMSTATE(&DataFlash);
 #endif
-    logger.Write_POS(ahrs);
+    DataFlash.Log_Write_POS(ahrs);
 }
 
 struct PACKED log_MotBatt {
@@ -85,13 +85,26 @@ void Sub::Log_Write_MotBatt()
         bat_res         : (float)(battery.get_resistance()),
         th_limit        : (float)(motors.get_throttle_limit())
     };
-    logger.WriteBlock(&pkt_mot, sizeof(pkt_mot));
+    DataFlash.WriteBlock(&pkt_mot, sizeof(pkt_mot));
 }
 
+struct PACKED log_Event {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t id;
+};
+
 // Wrote an event packet
-void Sub::Log_Write_Event(Log_Event id)
+void Sub::Log_Write_Event(uint8_t id)
 {
-    logger.Write_Event(id);
+    if (should_log(MASK_LOG_ANY)) {
+        struct log_Event pkt = {
+            LOG_PACKET_HEADER_INIT(LOG_EVENT_MSG),
+            time_us  : AP_HAL::micros64(),
+            id       : id
+        };
+        DataFlash.WriteCriticalBlock(&pkt, sizeof(pkt));
+    }
 }
 
 struct PACKED log_Data_Int16t {
@@ -112,7 +125,7 @@ void Sub::Log_Write_Data(uint8_t id, int16_t value)
             id          : id,
             data_value  : value
         };
-        logger.WriteCriticalBlock(&pkt, sizeof(pkt));
+        DataFlash.WriteCriticalBlock(&pkt, sizeof(pkt));
     }
 }
 
@@ -134,7 +147,7 @@ void Sub::Log_Write_Data(uint8_t id, uint16_t value)
             id          : id,
             data_value  : value
         };
-        logger.WriteCriticalBlock(&pkt, sizeof(pkt));
+        DataFlash.WriteCriticalBlock(&pkt, sizeof(pkt));
     }
 }
 
@@ -155,7 +168,7 @@ void Sub::Log_Write_Data(uint8_t id, int32_t value)
             id          : id,
             data_value  : value
         };
-        logger.WriteCriticalBlock(&pkt, sizeof(pkt));
+        DataFlash.WriteCriticalBlock(&pkt, sizeof(pkt));
     }
 }
 
@@ -176,7 +189,7 @@ void Sub::Log_Write_Data(uint8_t id, uint32_t value)
             id          : id,
             data_value  : value
         };
-        logger.WriteCriticalBlock(&pkt, sizeof(pkt));
+        DataFlash.WriteCriticalBlock(&pkt, sizeof(pkt));
     }
 }
 
@@ -198,8 +211,27 @@ void Sub::Log_Write_Data(uint8_t id, float value)
             id          : id,
             data_value  : value
         };
-        logger.WriteCriticalBlock(&pkt, sizeof(pkt));
+        DataFlash.WriteCriticalBlock(&pkt, sizeof(pkt));
     }
+}
+
+struct PACKED log_Error {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t sub_system;
+    uint8_t error_code;
+};
+
+// Write an error packet
+void Sub::Log_Write_Error(uint8_t sub_system, uint8_t error_code)
+{
+    struct log_Error pkt = {
+        LOG_PACKET_HEADER_INIT(LOG_ERROR_MSG),
+        time_us       : AP_HAL::micros64(),
+        sub_system    : sub_system,
+        error_code    : error_code,
+    };
+    DataFlash.WriteCriticalBlock(&pkt, sizeof(pkt));
 }
 
 // logs when baro or compass becomes unhealthy
@@ -208,13 +240,13 @@ void Sub::Log_Sensor_Health()
     // check baro
     if (sensor_health.baro != barometer.healthy()) {
         sensor_health.baro = barometer.healthy();
-        AP::logger().Write_Error(LogErrorSubsystem::BARO, (sensor_health.baro ? LogErrorCode::ERROR_RESOLVED : LogErrorCode::UNHEALTHY));
+        Log_Write_Error(ERROR_SUBSYSTEM_BARO, (sensor_health.baro ? ERROR_CODE_ERROR_RESOLVED : ERROR_CODE_UNHEALTHY));
     }
 
     // check compass
     if (sensor_health.compass != compass.healthy()) {
         sensor_health.compass = compass.healthy();
-        AP::logger().Write_Error(LogErrorSubsystem::COMPASS, (sensor_health.compass ? LogErrorCode::ERROR_RESOLVED : LogErrorCode::UNHEALTHY));
+        Log_Write_Error(ERROR_SUBSYSTEM_COMPASS, (sensor_health.compass ? ERROR_CODE_ERROR_RESOLVED : ERROR_CODE_UNHEALTHY));
     }
 }
 
@@ -244,11 +276,11 @@ void Sub::Log_Write_GuidedTarget(uint8_t target_type, const Vector3f& pos_target
         vel_target_y    : vel_target.y,
         vel_target_z    : vel_target.z
     };
-    logger.WriteBlock(&pkt, sizeof(pkt));
+    DataFlash.WriteBlock(&pkt, sizeof(pkt));
 }
 
 // type and unit information can be found in
-// libraries/AP_Logger/Logstructure.h; search for "log_Units" for
+// libraries/DataFlash/Logstructure.h; search for "log_Units" for
 // units and "Format characters" for field type information
 const struct LogStructure Sub::log_structure[] = {
     LOG_COMMON_STRUCTURES,
@@ -268,22 +300,24 @@ const struct LogStructure Sub::log_structure[] = {
       "DU32",  "QBI",         "TimeUS,Id,Value", "s--", "F--" },
     { LOG_DATA_FLOAT_MSG, sizeof(log_Data_Float),         
       "DFLT",  "QBf",         "TimeUS,Id,Value", "s--", "F--" },
+    { LOG_ERROR_MSG, sizeof(log_Error),         
+      "ERR",   "QBB",         "TimeUS,Subsys,ECode", "s--", "F--" },
     { LOG_GUIDEDTARGET_MSG, sizeof(log_GuidedTarget),
       "GUID",  "QBffffff",    "TimeUS,Type,pX,pY,pZ,vX,vY,vZ", "s-mmmnnn", "F-000000" },
 };
 
 void Sub::Log_Write_Vehicle_Startup_Messages()
 {
-    // only 200(?) bytes are guaranteed by AP_Logger
-    logger.Write_Mode(control_mode, control_mode_reason);
+    // only 200(?) bytes are guaranteed by DataFlash
+    DataFlash.Log_Write_Mode(control_mode, control_mode_reason);
     ahrs.Log_Write_Home_And_Origin();
-    gps.Write_AP_Logger_Log_Startup_messages();
+    gps.Write_DataFlash_Log_Startup_messages();
 }
 
 
 void Sub::log_init()
 {
-    logger.Init(log_structure, ARRAY_SIZE(log_structure));
+    DataFlash.Init(log_structure, ARRAY_SIZE(log_structure));
 }
 
 #else // LOGGING_ENABLED
@@ -292,12 +326,13 @@ void Sub::Log_Write_Control_Tuning() {}
 void Sub::Log_Write_Performance() {}
 void Sub::Log_Write_Attitude(void) {}
 void Sub::Log_Write_MotBatt() {}
-void Sub::Log_Write_Event(Log_Event id) {}
+void Sub::Log_Write_Event(uint8_t id) {}
 void Sub::Log_Write_Data(uint8_t id, int32_t value) {}
 void Sub::Log_Write_Data(uint8_t id, uint32_t value) {}
 void Sub::Log_Write_Data(uint8_t id, int16_t value) {}
 void Sub::Log_Write_Data(uint8_t id, uint16_t value) {}
 void Sub::Log_Write_Data(uint8_t id, float value) {}
+void Sub::Log_Write_Error(uint8_t sub_system, uint8_t error_code) {}
 void Sub::Log_Sensor_Health() {}
 void Sub::Log_Write_GuidedTarget(uint8_t target_type, const Vector3f& pos_target, const Vector3f& vel_target) {}
 void Sub::Log_Write_Vehicle_Startup_Messages() {}

@@ -1,5 +1,7 @@
 #include <AP_HAL/AP_HAL.h>
 
+#if HAL_CPU_CLASS >= HAL_CPU_CLASS_150
+
 #include "AP_NavEKF2.h"
 #include "AP_NavEKF2_core.h"
 #include <AP_AHRS/AP_AHRS.h>
@@ -83,7 +85,7 @@ void NavEKF2_core::setWindMagStateLearningMode()
         }
     }
 
-    // determine if the vehicle is manoeuvring
+    // determine if the vehicle is manoevring
     if (accNavMagHoriz > 0.5f) {
         manoeuvring = true;
     } else {
@@ -170,7 +172,7 @@ void NavEKF2_core::setAidingMode()
         bool canUseExtNav = readyToUseExtNav();
         if(canUseGPS || canUseRangeBeacon || canUseExtNav) {
             PV_AidingMode = AID_ABSOLUTE;
-        } else if (optFlowDataPresent() && (frontend->_flowUse == FLOW_USE_NAV) && filterIsStable) {
+        } else if (optFlowDataPresent() && filterIsStable) {
             PV_AidingMode = AID_RELATIVE;
         }
         }
@@ -261,7 +263,7 @@ void NavEKF2_core::setAidingMode()
 
     // check to see if we are starting or stopping aiding and set states and modes as required
     if (PV_AidingMode != PV_AidingModePrev) {
-        // set various usage modes based on the condition when we start aiding. These are then held until aiding is stopped.
+        // set various  usage modes based on the condition when we start aiding. These are then held until aiding is stopped.
         switch (PV_AidingMode) {
         case AID_NONE:
             // We have ceased aiding
@@ -516,3 +518,4 @@ void  NavEKF2_core::updateFilterStatus(void)
     filterStatus.flags.gps_quality_good = gpsGoodToAlign;
 }
 
+#endif // HAL_CPU_CLASS

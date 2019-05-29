@@ -27,7 +27,7 @@
 #include <sys/types.h>
 
 #include <AP_HAL/AP_HAL.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include "pthread.h"
 
 extern const AP_HAL::HAL& hal;
@@ -281,9 +281,8 @@ void FlightAxis::exchange_data(const struct sitl_input &input)
         controller_started = true;
     }
 
-    // maximum number of servos to send is 12 with new FlightAxis
-    float scaled_servos[12];
-    for (uint8_t i=0; i<ARRAY_SIZE(scaled_servos); i++) {
+    float scaled_servos[8];
+    for (uint8_t i=0; i<8; i++) {
         scaled_servos[i] = (input.servos[i] - 1000) / 1000.0f;
     }
 
@@ -313,12 +312,8 @@ void FlightAxis::exchange_data(const struct sitl_input &input)
 <soap:Body>
 <ExchangeData>
 <pControlInputs>
-<m-selectedChannels>4095</m-selectedChannels>
+<m-selectedChannels>255</m-selectedChannels>
 <m-channelValues-0to1>
-<item>%.4f</item>
-<item>%.4f</item>
-<item>%.4f</item>
-<item>%.4f</item>
 <item>%.4f</item>
 <item>%.4f</item>
 <item>%.4f</item>
@@ -339,11 +334,7 @@ void FlightAxis::exchange_data(const struct sitl_input &input)
                                scaled_servos[4],
                                scaled_servos[5],
                                scaled_servos[6],
-                               scaled_servos[7],
-                               scaled_servos[8],
-                               scaled_servos[9],
-                               scaled_servos[10],
-                               scaled_servos[11]);
+                               scaled_servos[7]);
 
     if (reply) {
         WITH_SEMAPHORE(mutex);
@@ -450,26 +441,7 @@ void FlightAxis::update(const struct sitl_input &input)
     position -= position_offset;
 
     airspeed = state.m_airspeed_MPS;
-
-    /* for pitot airspeed we need the airspeed along the X axis. We
-       can't get that from m_airspeed_MPS, so instead we canculate it
-       from wind vector and ground speed
-     */
-    Vector3f m_wind_ef(-state.m_windY_MPS,-state.m_windX_MPS,-state.m_windZ_MPS);
-    Vector3f airspeed_3d_ef = m_wind_ef + velocity_ef;
-    Vector3f airspeed3d = dcm.mul_transpose(airspeed_3d_ef);
-
-    airspeed_pitot = MAX(airspeed3d.x,0);
-
-#if 0
-    printf("WIND: %.1f %.1f %.1f AS3D %.1f %.1f %.1f\n",
-           state.m_windX_MPS,
-           state.m_windY_MPS,
-           state.m_windZ_MPS,
-           airspeed3d.x,
-           airspeed3d.y,
-           airspeed3d.z);
-#endif
+    airspeed_pitot = state.m_airspeed_MPS;
 
     battery_voltage = state.m_batteryVoltage_VOLTS;
     battery_current = state.m_batteryCurrentDraw_AMPS;

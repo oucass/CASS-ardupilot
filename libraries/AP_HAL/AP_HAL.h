@@ -18,7 +18,6 @@
 #include "Semaphores.h"
 #include "Util.h"
 #include "OpticalFlow.h"
-#include "Flash.h"
 
 #if HAL_WITH_UAVCAN
 #include "CAN.h"

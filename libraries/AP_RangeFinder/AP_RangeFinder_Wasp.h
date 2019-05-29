@@ -10,7 +10,6 @@ class AP_RangeFinder_Wasp : public AP_RangeFinder_Backend {
 
 public:
     AP_RangeFinder_Wasp(RangeFinder::RangeFinder_State &_state,
-                        AP_RangeFinder_Params &_params,
                         AP_SerialManager &serial_manager,
                         uint8_t serial_instance);
 

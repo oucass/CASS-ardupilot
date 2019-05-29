@@ -62,9 +62,6 @@ public:
     // update state of all sensors. Should be called from main loop
     void update(void);
 
-    // log data to logger
-    void Log_Write();
-
     // return the number of wheel encoder sensor instances
     uint8_t num_sensors(void) const { return num_instances; }
 
@@ -80,8 +77,8 @@ public:
     // get the wheel radius in meters
     float get_wheel_radius(uint8_t instance) const;
 
-    // return a 3D vector defining the position offset of the center of the wheel in meters relative to the body frame origin
-    const Vector3f &get_pos_offset(uint8_t instance) const;
+    // get the position of the wheel associated with the wheel encoder
+    Vector3f get_position(uint8_t instance) const;
 
     // get total delta angle (in radians) measured by the wheel encoder
     float get_delta_angle(uint8_t instance) const;
@@ -118,5 +115,4 @@ protected:
     WheelEncoder_State state[WHEELENCODER_MAX_INSTANCES];
     AP_WheelEncoder_Backend *drivers[WHEELENCODER_MAX_INSTANCES];
     uint8_t num_instances;
-    Vector3f pos_offset_zero;   // allows returning position offsets of zero for invalid requests
 };

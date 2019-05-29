@@ -10,6 +10,52 @@
 
 #include <RC_Channel/RC_Channels_VarInfo.h>
 
+Mode *Rover::mode_from_mode_num(const enum Mode::Number num)
+{
+    Mode *ret = nullptr;
+    switch (num) {
+    case Mode::Number::MANUAL:
+        ret = &mode_manual;
+        break;
+    case Mode::Number::ACRO:
+        ret = &mode_acro;
+        break;
+    case Mode::Number::STEERING:
+        ret = &mode_steering;
+        break;
+    case Mode::Number::HOLD:
+        ret = &mode_hold;
+        break;
+    case Mode::Number::LOITER:
+        ret = &mode_loiter;
+        break;
+    case Mode::Number::FOLLOW:
+        ret = &mode_follow;
+        break;
+    case Mode::Number::SIMPLE:
+        ret = &mode_simple;
+        break;
+    case Mode::Number::AUTO:
+        ret = &mode_auto;
+        break;
+    case Mode::Number::RTL:
+        ret = &mode_rtl;
+        break;
+    case Mode::Number::SMART_RTL:
+        ret = &mode_smartrtl;
+        break;
+    case Mode::Number::GUIDED:
+       ret = &mode_guided;
+        break;
+    case Mode::Number::INITIALISING:
+        ret = &mode_initializing;
+        break;
+    default:
+        break;
+    }
+    return ret;
+}
+
 int8_t RC_Channels_Rover::flight_mode_channel_number() const
 {
     return rover.g.mode_channel;
@@ -33,18 +79,18 @@ void RC_Channel_Rover::init_aux_function(const aux_func_t ch_option, const aux_s
     // init channel options
     switch(ch_option) {
         // the following functions do not need initialising:
-    case AUX_FUNC::SAVE_WP:
-    case AUX_FUNC::LEARN_CRUISE:
-    case AUX_FUNC::ARMDISARM:
-    case AUX_FUNC::MANUAL:
-    case AUX_FUNC::ACRO:
-    case AUX_FUNC::STEERING:
-    case AUX_FUNC::HOLD:
-    case AUX_FUNC::AUTO:
-    case AUX_FUNC::GUIDED:
-    case AUX_FUNC::LOITER:
-    case AUX_FUNC::FOLLOW:
-    case AUX_FUNC::SAILBOAT_TACK:
+    case SAVE_WP:
+    case LEARN_CRUISE:
+    case ARMDISARM:
+    case MANUAL:
+    case ACRO:
+    case STEERING:
+    case HOLD:
+    case AUTO:
+    case GUIDED:
+    case LOITER:
+    case FOLLOW:
+    case SAILBOAT_TACK:
         break;
     default:
         RC_Channel::init_aux_function(ch_option, ch_flag);
@@ -78,29 +124,12 @@ void RC_Channel_Rover::do_aux_function_change_mode(Mode &mode,
     }
 }
 
-void RC_Channel_Rover::add_waypoint_for_current_loc()
-{
-    // create new mission command
-    AP_Mission::Mission_Command cmd = {};
-
-    // set new waypoint to current location
-    cmd.content.location = rover.current_loc;
-
-    // make the new command to a waypoint
-    cmd.id = MAV_CMD_NAV_WAYPOINT;
-
-    // save command
-    if (rover.mode_auto.mission.add_cmd(cmd)) {
-        hal.console->printf("Added waypoint %u", (unsigned)rover.mode_auto.mission.num_commands());
-    }
-}
-
 void RC_Channel_Rover::do_aux_function(const aux_func_t ch_option, const aux_switch_pos_t ch_flag)
 {
     switch (ch_option) {
-    case AUX_FUNC::DO_NOTHING:
+    case DO_NOTHING:
         break;
-    case AUX_FUNC::SAVE_WP:
+    case SAVE_WP:
         if (ch_flag == HIGH) {
             // do nothing if in AUTO mode
             if (rover.control_mode == &rover.mode_auto) {
@@ -109,97 +138,105 @@ void RC_Channel_Rover::do_aux_function(const aux_func_t ch_option, const aux_swi
 
             // if disarmed clear mission and set home to current location
             if (!rover.arming.is_armed()) {
-                rover.mode_auto.mission.clear();
-                if (!rover.set_home_to_current_location(false)) {
-                    // ignored
-                }
+                rover.mission.clear();
+                rover.set_home_to_current_location(false);
                 return;
             }
 
             // record the waypoint if not in auto mode
             if (rover.control_mode != &rover.mode_auto) {
-                if (rover.mode_auto.mission.num_commands() == 0) {
-                    // add a home location....
-                    add_waypoint_for_current_loc();
+                // create new mission command
+                AP_Mission::Mission_Command cmd = {};
+
+                // set new waypoint to current location
+                cmd.content.location = rover.current_loc;
+
+                // make the new command to a waypoint
+                cmd.id = MAV_CMD_NAV_WAYPOINT;
+
+                // save command
+                if (rover.mission.add_cmd(cmd)) {
+                    hal.console->printf("Added waypoint %u", (unsigned)rover.mission.num_commands());
                 }
-                add_waypoint_for_current_loc();
             }
         }
         break;
 
     // learn cruise speed and throttle
-    case AUX_FUNC::LEARN_CRUISE:
+    case LEARN_CRUISE:
         if (ch_flag == HIGH) {
             rover.cruise_learn_start();
+        } else if (ch_flag == LOW) {
+            rover.cruise_learn_complete();
         }
         break;
 
     // arm or disarm the motors
-    case AUX_FUNC::ARMDISARM:
+    case ARMDISARM:
         if (ch_flag == HIGH) {
-            rover.arm_motors(AP_Arming::Method::RUDDER);
+            rover.arm_motors(AP_Arming::RUDDER);
         } else if (ch_flag == LOW) {
             rover.disarm_motors();
         }
         break;
 
     // set mode to Manual
-    case AUX_FUNC::MANUAL:
+    case MANUAL:
         do_aux_function_change_mode(rover.mode_manual, ch_flag);
         break;
 
     // set mode to Acro
-    case AUX_FUNC::ACRO:
+    case ACRO:
         do_aux_function_change_mode(rover.mode_acro, ch_flag);
         break;
 
     // set mode to Steering
-    case AUX_FUNC::STEERING:
+    case STEERING:
         do_aux_function_change_mode(rover.mode_steering, ch_flag);
         break;
 
     // set mode to Hold
-    case AUX_FUNC::HOLD:
+    case HOLD:
         do_aux_function_change_mode(rover.mode_hold, ch_flag);
         break;
 
     // set mode to Auto
-    case AUX_FUNC::AUTO:
+    case AUTO:
         do_aux_function_change_mode(rover.mode_auto, ch_flag);
         break;
 
     // set mode to RTL
-    case AUX_FUNC::RTL:
+    case RTL:
         do_aux_function_change_mode(rover.mode_rtl, ch_flag);
         break;
 
     // set mode to SmartRTL
-    case AUX_FUNC::SMART_RTL:
+    case SMART_RTL:
         do_aux_function_change_mode(rover.mode_smartrtl, ch_flag);
         break;
 
     // set mode to Guided
-    case AUX_FUNC::GUIDED:
+    case GUIDED:
         do_aux_function_change_mode(rover.mode_guided, ch_flag);
         break;
 
     // Set mode to LOITER
-    case AUX_FUNC::LOITER:
+    case LOITER:
         do_aux_function_change_mode(rover.mode_loiter, ch_flag);
         break;
 
     // Set mode to Follow
-    case AUX_FUNC::FOLLOW:
+    case FOLLOW:
         do_aux_function_change_mode(rover.mode_follow, ch_flag);
         break;
 
     // set mode to Simple
-    case AUX_FUNC::SIMPLE:
+    case SIMPLE:
         do_aux_function_change_mode(rover.mode_simple, ch_flag);
         break;
 
     // trigger sailboat tack
-    case AUX_FUNC::SAILBOAT_TACK:
+    case SAILBOAT_TACK:
         // any switch movement interpreted as request to tack
         rover.control_mode->handle_tack_request();
         break;

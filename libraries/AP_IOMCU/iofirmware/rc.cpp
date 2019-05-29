@@ -21,8 +21,6 @@
 #include "hal.h"
 #include "iofirmware.h"
 #include "rc.h"
-#include <AP_HAL/AP_HAL.h>
-#include <AP_Math/AP_Math.h>
 #include <AP_SBusOut/AP_SBusOut.h>
 
 extern const AP_HAL::HAL& hal;
@@ -68,7 +66,7 @@ void AP_IOMCU_FW::rcin_serial_init(void)
                                &sd3_listener,
                                EVENT_MASK(1),
                                SD_PARITY_ERROR);
-    rcprotocol = AP_RCProtocol::get_singleton();
+    rcprotocol = AP_RCProtocol::get_instance();
 
     // disable input for SBUS with pulses, we will use the UART for
     // SBUS.

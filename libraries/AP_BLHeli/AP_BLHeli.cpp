@@ -30,7 +30,7 @@
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <GCS_MAVLink/GCS.h>
 #include <AP_SerialManager/AP_SerialManager.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -42,7 +42,7 @@ extern const AP_HAL::HAL& hal;
 
 const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     // @Param: MASK
-    // @DisplayName: BLHeli Channel Bitmask
+    // @DisplayName: Channel Bitmask
     // @Description: Enable of BLHeli pass-thru servo protocol support to specific channels. This mask is in addition to motors enabled using SERVO_BLH_AUTO (if any)
     // @Bitmask: 0:Channel1,1:Channel2,2:Channel3,3:Channel4,4:Channel5,5:Channel6,6:Channel7,7:Channel8,8:Channel9,9:Channel10,10:Channel11,11:Channel12,12:Channel13,13:Channel14,14:Channel15,15:Channel16
     // @User: Advanced
@@ -50,7 +50,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduCopter) || APM_BUILD_TYPE(APM_BUILD_ArduPlane)
     // @Param: AUTO
-    // @DisplayName: BLHeli auto-enable for multicopter motors
+    // @DisplayName: auto-enable for multicopter motors
     // @Description: If set to 1 this auto-enables BLHeli pass-thru support for all multicopter motors
     // @Values: 0:Disabled,1:Enabled
     // @User: Standard
@@ -58,7 +58,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
 #endif
 
     // @Param: TEST
-    // @DisplayName: BLHeli internal interface test
+    // @DisplayName: internal test of BLHeli interface
     // @Description: Setting SERVO_BLH_TEST to a motor number enables an internal test of the BLHeli ESC protocol to the corresponding ESC. The debug output is displayed on the USB console.
     // @Values: 0:Disabled,1:TestMotor1,2:TestMotor2,3:TestMotor3,4:TestMotor4,5:TestMotor5,6:TestMotor6,7:TestMotor7,8:TestMotor8
     // @User: Advanced
@@ -78,7 +78,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     // @Units: Hz
     // @Range: 0 500
     // @User: Standard
-    AP_GROUPINFO("TRATE",  5, AP_BLHeli, telem_rate, 10),
+    AP_GROUPINFO("TRATE",  5, AP_BLHeli, telem_rate, 0),
 
     // @Param: DEBUG
     // @DisplayName: BLHeli debug level
@@ -88,7 +88,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     AP_GROUPINFO("DEBUG",  6, AP_BLHeli, debug_level, 0),
 
     // @Param: OTYPE
-    // @DisplayName: BLHeli output type override
+    // @DisplayName: Output type override
     // @Description: When set to a non-zero value this overrides the output type for the output channels given by SERVO_BLH_MASK. This can be used to enable DShot on outputs that are not part of the multicopter motors group.
     // @Values: 0:None,1:OneShot,2:OneShot125,3:Brushed,4:DShot150,5:DShot300,6:DShot600,7:DShot1200
     // @User: Advanced
@@ -102,14 +102,14 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     AP_GROUPINFO("PORT",  8, AP_BLHeli, control_port, 0),
 
     // @Param: POLES
-    // @DisplayName: BLHeli Motor Poles
+    // @DisplayName: Motor Poles
     // @Description: This allows calculation of true RPM from ESC's eRPM. The default is 14.
     // @Range: 1 127
     // @User: Advanced
     AP_GROUPINFO("POLES",  9, AP_BLHeli, motor_poles, 14),
 
     // @Param: REMASK
-    // @DisplayName: BLHeli bitmask of reversible channels
+    // @DisplayName: Channel Reversible Bitmask
     // @Description: Mask of channels which are reversible. This is used for ESCs which have been configured in '3D' mode, allowing for the motor to spin in either direction
     // @Bitmask: 0:Channel1,1:Channel2,2:Channel3,3:Channel4,4:Channel5,5:Channel6,6:Channel7,7:Channel8,8:Channel9,9:Channel10,10:Channel11,11:Channel12,12:Channel13,13:Channel14,14:Channel15,15:Channel16
     // @User: Advanced
@@ -118,14 +118,14 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     AP_GROUPEND
 };
 
-AP_BLHeli *AP_BLHeli::_singleton;
+AP_BLHeli *AP_BLHeli::singleton;
 
 // constructor
 AP_BLHeli::AP_BLHeli(void)
 {
     // set defaults from the parameter table
     AP_Param::setup_object_defaults(this, var_info);
-    _singleton = this;
+    singleton = this;
     last_control_port = -1;
 }
 
@@ -301,12 +301,12 @@ void AP_BLHeli::msp_process_command(void)
         msp_send_reply(msp.cmdMSP, buf, sizeof(buf));
         break;
     }
-
+        
     case MSP_FC_VARIANT:
         debug("MSP_FC_VARIANT");
         msp_send_reply(msp.cmdMSP, (const uint8_t *)ARDUPILOT_IDENTIFIER, FLIGHT_CONTROLLER_IDENTIFIER_LENGTH);
         break;
-
+        
     case MSP_FC_VERSION: {
         debug("MSP_FC_VERSION");
         uint8_t version[3] = { 3, 3, 0 };
@@ -435,7 +435,7 @@ void AP_BLHeli::msp_process_command(void)
         hal.rcout->push();
         break;
     }
-
+    
     case MSP_SET_4WAY_IF: {
         debug("MSP_SET_4WAY_IF");
         if (msp.dataSize == 0) {
@@ -463,6 +463,7 @@ void AP_BLHeli::msp_process_command(void)
         break;
     }
 }
+
 
 /*
   send a blheli 4way protocol reply
@@ -676,7 +677,7 @@ bool AP_BLHeli::BL_ConnectEx(void)
     blheli.deviceInfo[blheli.chan][0] = BootInfo[5];
 
     blheli.interface_mode[blheli.chan] = 0;
-
+    
     uint16_t *devword = (uint16_t *)blheli.deviceInfo[blheli.chan];
     switch (*devword) {
     case 0x9307:
@@ -700,8 +701,6 @@ bool AP_BLHeli::BL_ConnectEx(void)
     case 0x3306:
     case 0x3406:
     case 0x3506:
-    case 0x2B06:
-    case 0x4706:
         blheli.interface_mode[blheli.chan] = imARM_BLB;
         debug("Interface type imARM_BLB");
         break;
@@ -736,7 +735,7 @@ bool AP_BLHeli::BL_PageErase(void)
         if (!BL_SendBuf(sCMD, 2)) {
             return false;
         }
-        return BL_GetACK(3000) == brSUCCESS;
+        return BL_GetACK(1000) == brSUCCESS;
     }
     return false;
 }
@@ -867,7 +866,7 @@ void AP_BLHeli::blheli_process_command(void)
         }
         if (uart_locked) {
             debug("Unlocked UART");
-            uart->lock_port(0, 0);
+            uart->lock_port(0);
             uart_locked = false;
         }
         memset(blheli.connected, 0, sizeof(blheli.connected));
@@ -1040,7 +1039,7 @@ void AP_BLHeli::blheli_process_command(void)
         blheli_send_reply(&b, 1);
         break;
     }
-
+        
     case cmd_DeviceEraseAll:
     case cmd_DeviceC2CK_LOW:
     default:
@@ -1060,7 +1059,7 @@ void AP_BLHeli::blheli_process_command(void)
 bool AP_BLHeli::process_input(uint8_t b)
 {
     bool valid_packet = false;
-
+    
     if (msp.escMode == PROTOCOL_4WAY && blheli.state == BLHELI_IDLE && b == '$') {
         debug("Change to MSP mode");
         msp.escMode = PROTOCOL_NONE;
@@ -1081,7 +1080,7 @@ bool AP_BLHeli::process_input(uint8_t b)
         if (blheli.state == BLHELI_COMMAND_RECEIVED) {
             valid_packet = true;
             last_valid_ms = AP_HAL::millis();
-            if (uart->lock_port(BLHELI_UART_LOCK_KEY, 0)) {
+            if (uart->lock_port(BLHELI_UART_LOCK_KEY)) {
                 uart_locked = true;
             }
             blheli_process_command();
@@ -1091,7 +1090,7 @@ bool AP_BLHeli::process_input(uint8_t b)
     } else if (msp.state == MSP_COMMAND_RECEIVED) {
         if (msp.packetType == MSP_PACKET_COMMAND) {
             valid_packet = true;
-            if (uart->lock_port(BLHELI_UART_LOCK_KEY, 0)) {
+            if (uart->lock_port(BLHELI_UART_LOCK_KEY)) {
                 uart_locked = true;
             }
             last_valid_ms = AP_HAL::millis();
@@ -1116,6 +1115,7 @@ bool AP_BLHeli::protocol_handler(uint8_t b, AP_HAL::UARTDriver *_uart)
     }
     return process_input(b);
 }
+
 
 /*
   run a connection test to the ESCs. This is used to test the
@@ -1187,7 +1187,7 @@ void AP_BLHeli::update(void)
             SRV_Channels::set_disabled_channel_mask(0);            
         }
         debug("Unlocked UART");
-        uart->lock_port(0, 0);
+        uart->lock_port(0);
         uart_locked = false;
     }
     if (initialised || (channel_mask.get() == 0 && channel_auto.get() == 0)) {
@@ -1246,13 +1246,13 @@ void AP_BLHeli::update(void)
     if (mask && mode != AP_HAL::RCOutput::MODE_PWM_NONE) {
         hal.rcout->set_output_mode(mask, mode);
     }
-
+    
 #if APM_BUILD_TYPE(APM_BUILD_ArduCopter) || APM_BUILD_TYPE(APM_BUILD_ArduPlane)
     /*
       plane and copter can use AP_Motors to get an automatic mask
      */
     if (channel_auto.get() == 1) {
-        AP_Motors *motors = AP_Motors::get_singleton();
+        AP_Motors *motors = AP_Motors::get_instance();
         if (motors) {
             mask |= motors->get_motor_mask();
         }
@@ -1275,7 +1275,7 @@ void AP_BLHeli::update(void)
     debug("ESC: %u motors mask=0x%04x", num_motors, mask);
 
     if (telem_rate > 0) {
-        AP_SerialManager *serial_manager = AP_SerialManager::get_singleton();
+        AP_SerialManager *serial_manager = AP_SerialManager::get_instance();
         if (serial_manager) {
             telem_uart = serial_manager->find_serial(AP_SerialManager::SerialProtocol_ESCTelemetry,0);
         }
@@ -1326,7 +1326,7 @@ void AP_BLHeli::read_telemetry_packet(void)
         }
         buf[i] = uint8_t(v);
     }
-
+    
     // calculate crc
     for (uint8_t i=0; i<telem_packet_size-1; i++) {    
         crc = telem_crc8(buf[i], crc);
@@ -1347,16 +1347,19 @@ void AP_BLHeli::read_telemetry_packet(void)
 
     last_telem[last_telem_esc] = td;
     last_telem[last_telem_esc].count++;
-
-    AP_Logger *logger = AP_Logger::get_singleton();
-    if (logger && logger->logging_enabled()) {
-        logger->Write_ESC(uint8_t(last_telem_esc),
-                      AP_HAL::micros64(),
-                      td.rpm*100U,
-                      td.voltage,
-                      td.current,
-                      td.temperature * 100U,
-                      td.consumption);
+    
+    DataFlash_Class *df = DataFlash_Class::instance();
+    if (df && df->logging_enabled()) {
+        struct log_Esc pkt = {
+            LOG_PACKET_HEADER_INIT(uint8_t(LOG_ESC1_MSG+last_telem_esc)),
+            time_us     : AP_HAL::micros64(),
+            rpm         : int32_t(td.rpm*100U),
+            voltage     : td.voltage,
+            current     : td.current,
+            temperature : int16_t(td.temperature * 100U),
+            current_tot : td.consumption
+        };
+        df->WriteBlock(&pkt, sizeof(pkt));
     }
     if (debug_level >= 2) {
         hal.console->printf("ESC[%u] T=%u V=%u C=%u con=%u RPM=%u t=%u\n",
@@ -1389,9 +1392,9 @@ void AP_BLHeli::update_telemetry(void)
         telem_uart->begin(115200);
         telem_uart_started = true;
     }
-
+        
     uint32_t nbytes = telem_uart->available();
-
+    
     if (nbytes > telem_packet_size) {
         // if we have more than 10 bytes then we don't know which ESC
         // they are from. Throw them all away
@@ -1430,6 +1433,7 @@ void AP_BLHeli::update_telemetry(void)
         last_telem_request_us = now;
     }
 }
+
 
 /*
   send ESC telemetry messages over MAVLink

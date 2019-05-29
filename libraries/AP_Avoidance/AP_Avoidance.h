@@ -27,6 +27,7 @@
 
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_ADSB/AP_ADSB.h>
+#include <AP_Common/Semaphore.h>
 
 // F_RCVRY possible parameter values
 #define AP_AVOIDANCE_RECOVERY_REMAIN_IN_AVOID_ADSB                  0
@@ -200,6 +201,8 @@ private:
     HAL_Semaphore_Recursive _rsem;
 };
 
+float closest_distance_between_radial_and_point(const Vector2f &w,
+                                                const Vector2f &p);
 float closest_approach_xy(const Location &my_loc,
                           const Vector3f &my_vel,
                           const Location &obstacle_loc,

@@ -1,8 +1,4 @@
-#pragma once
-
-#include <stdint.h>
 #include <AP_HAL/AP_HAL.h>
-#include <AP_Common/AP_Common.h>
 #include <AP_RCProtocol/AP_RCProtocol.h>
 
 
@@ -16,7 +12,7 @@ class AP_IOMCU_FW {
 public:
     void process_io_packet();
 
-    struct IOPacket rx_io_packet, tx_io_packet;
+    struct IOPacket rx_io_packet, tx_io_packet, rx_io_last;
 
     void init();
     void update();

@@ -10,7 +10,6 @@
 #include <signal.h>
 #include <unistd.h>
 #include <AP_HAL/utility/getopt_cpp.h>
-#include <AP_Logger/AP_Logger_SITL.h>
 
 #include <SITL/SIM_Multicopter.h>
 #include <SITL/SIM_Helicopter.h>
@@ -30,7 +29,6 @@
 #include <SITL/SIM_Calibration.h>
 #include <SITL/SIM_XPlane.h>
 #include <SITL/SIM_Submarine.h>
-#include <SITL/SIM_Morse.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -48,7 +46,7 @@ void SITL_State::_usage(void)
 {
     printf("Options:\n"
            "\t--help|-h                display this help information\n"
-           "\t--wipe|-w                wipe eeprom\n"
+           "\t--wipe|-w                wipe eeprom and dataflash\n"
            "\t--unhide-groups|-u       parameter enumeration ignores AP_PARAM_FLAG_ENABLE\n"
            "\t--speedup|-s SPEEDUP     set simulation speedup\n"
            "\t--rate|-r RATE           set SITL framerate\n"
@@ -91,9 +89,6 @@ static const struct {
     { "quad",               MultiCopter::create },
     { "copter",             MultiCopter::create },
     { "x",                  MultiCopter::create },
-    { "bfx",                MultiCopter::create },
-    { "djix",               MultiCopter::create },
-    { "cwx",                MultiCopter::create },
     { "hexa",               MultiCopter::create },
     { "octa",               MultiCopter::create },
     { "dodeca-hexa",        MultiCopter::create },
@@ -117,7 +112,6 @@ static const struct {
     { "plane",              Plane::create },
     { "calibration",        Calibration::create },
     { "vectored",           Submarine::create },
-    { "morse",              Morse::create },
 };
 
 void SITL_State::_set_signal_handlers(void) const
@@ -233,7 +227,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         switch (opt) {
         case 'w':
             AP_Param::erase_all();
-            unlink(AP_Logger_SITL::filename);
+            unlink("dataflash.bin");
             break;
         case 'u':
             AP_Param::set_hide_disabled_groups(false);

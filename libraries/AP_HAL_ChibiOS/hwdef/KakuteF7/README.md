@@ -16,21 +16,9 @@ The KakuteF7 AIO is a flight controller produced by [Holybro](http://www.holybro
 
 ## Pinout
 
-The KakuteF7 comes in two varients. One is an AIO (All-In-One) board,
-with OSD. The other is a smaller board without OSD.
-
-### KakuteF7 Pinout
-
-![KakuteF7 Board](kakutef7.jpg "KakuteF7")
-
-### KakuteF7 AIO Pinout
-
-![KakuteF7 AIO Board](kakutef7_AIO.jpg "KakuteF7 AIO")
+![KakuteF7 Board](KakuteF7.jpg "KakuteF7")
 
 ## UART Mapping
-
-The UARTs are marked Rn and Tn in the above pinouts. The Rn pin is the
-receive pin for UARTn. The Tn pin is the transmit pin for UARTn.
 
  - SERIAL0 -> USB
  - SERIAL1 -> UART1 (Telem1)
@@ -39,10 +27,7 @@ receive pin for UARTn. The Tn pin is the transmit pin for UARTn.
  - SERIAL4 -> UART4
  - SERIAL5 -> UART7
  - SERIAL6 -> UART6 (Transmit only, FrSky)
-
-The SERIAL5 port (UART7) is for ESC telemetry, and has a R7 pad on
-each of the four corners of the KakuteF7 AIO board.
-
+ 
 ## RC Input
  
 RC input is configured on the R6 (UART6_RX) pin. It supports all RC protocols.
@@ -56,7 +41,7 @@ FrSky Telemetry is supported using the T6 pin (UART6 transmit). You need to set 
   
 ## OSD Support
 
-The KakuteF7 AIO supports OSD using OSD_TYPE 1 (MAX7456 driver).
+The KakuteF7 supports OSD using OSD_TYPE 1 (MAX7456 driver).
 
 ## PWM Output
 

@@ -1,55 +1,37 @@
 #include <AP_Common/AP_Common.h>
+#include <GCS_MAVLink/GCS.h>
 #include <SRV_Channel/SRV_Channel.h>
-#include <AP_HAL/HAL.h>
 
 #include "lua_bindings.h"
 
-#include "lua_boxed_numerics.h"
-#include "lua_generated_bindings.h"
-
-extern const AP_HAL::HAL& hal;
-
-int check_arguments(lua_State *L, int expected_arguments, const char *fn_name);
-int check_arguments(lua_State *L, int expected_arguments, const char *fn_name) {
-#if defined(AP_SCRIPTING_CHECKS) && AP_SCRIPTING_CHECKS >= 1
-    if (expected_arguments < 0) {
-       AP_HAL::panic("Lua: Attempted to check for negative arguments");
-    }
-#endif
-
-    const int args = lua_gettop(L);
-    if (args != expected_arguments) {
-        return luaL_error(L, "%s expected %d arguments got %d", fn_name, expected_arguments, args);
-    }
+int lua_gcs_send_text(lua_State *state) {
+    const char* str = lua_tostring(state, 1);
+    gcs().send_text(MAV_SEVERITY_INFO, str);
     return 0;
 }
 
-// servo binding
+static const luaL_Reg gcs_functions[] =
+{
+    {"send_text", lua_gcs_send_text},
+    {NULL, NULL}
+};
 
-static int lua_servo_set_output_pwm(lua_State *L) {
-    check_arguments(L, 2, "set_output_pwm");
+int lua_servo_set_output_pwm(lua_State *state) {
+    int servo_function = luaL_checkinteger(state, -2);
+    int output_value = luaL_checknumber(state, -1);
 
-    const SRV_Channel::Aux_servo_function_t servo_function = (SRV_Channel::Aux_servo_function_t)luaL_checkinteger(L, -2);
-    luaL_argcheck(L, ((servo_function >= SRV_Channel::Aux_servo_function_t::k_scripting1) &&
-                      (servo_function <= SRV_Channel::Aux_servo_function_t::k_scripting16)),
-                  2, "function out of range");
+    // range check the output function
+    if ((servo_function < SRV_Channel::Aux_servo_function_t::k_scripting1) ||
+        (servo_function > SRV_Channel::Aux_servo_function_t::k_scripting16)) {
+        return luaL_error(state, "Servo function (%d) is not a scriptable output", servo_function);
+    }
 
-    const int output = luaL_checknumber(L, -1);
-    luaL_argcheck(L, ((output >= 0) && (output <= UINT16_MAX)), 2, "output out of range");
+    if (output_value > UINT16_MAX) {
+        return luaL_error(state, "Servo range (%d) is out of range", output_value);
+    }
 
-    SRV_Channels::set_output_pwm((SRV_Channel::Aux_servo_function_t)servo_function, output);
-
+    SRV_Channels::set_output_pwm((SRV_Channel::Aux_servo_function_t)servo_function, output_value);
     return 0;
-}
-
-// millis
-static int lua_millis(lua_State *L) {
-    check_arguments(L, 0, "millis");
-
-    new_uint32_t(L);
-    *check_uint32_t(L, -1) = AP_HAL::millis();
-
-    return 1;
 }
 
 static const luaL_Reg servo_functions[] =
@@ -58,13 +40,10 @@ static const luaL_Reg servo_functions[] =
     {NULL, NULL}
 };
 
-void load_lua_bindings(lua_State *L) {
-    luaL_newlib(L, servo_functions);
-    lua_setglobal(L, "servo");
-
-    load_generated_bindings(L);
-
-    lua_pushcfunction(L, lua_millis);
-    lua_setglobal(L, "millis");
+void load_lua_bindings(lua_State *state) {
+    luaL_newlib(state, gcs_functions);
+    lua_setglobal(state, "gcs");
+    luaL_newlib(state, servo_functions);
+    lua_setglobal(state, "servo");
 }
 

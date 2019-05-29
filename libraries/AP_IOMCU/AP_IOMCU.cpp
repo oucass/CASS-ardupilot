@@ -17,7 +17,6 @@
 #include <SRV_Channel/SRV_Channel.h>
 #include <RC_Channel/RC_Channel.h>
 #include <AP_RCProtocol/AP_RCProtocol.h>
-#include <AP_InternalError/AP_InternalError.h>
 
 extern const AP_HAL::HAL &hal;
 
@@ -28,7 +27,6 @@ enum ioevents {
     IOEVENT_FORCE_SAFETY_OFF,
     IOEVENT_FORCE_SAFETY_ON,
     IOEVENT_SET_ONESHOT_ON,
-    IOEVENT_SET_BRUSHED_ON,
     IOEVENT_SET_RATES,
     IOEVENT_ENABLE_SBUS,
     IOEVENT_SET_HEATER_TARGET,
@@ -36,10 +34,6 @@ enum ioevents {
     IOEVENT_SET_SAFETY_MASK,
     IOEVENT_MIXING
 };
-
-// max number of consecutve protocol failures we accept before raising
-// an error
-#define IOMCU_MAX_REPEATED_FAILURES 20
 
 AP_IOMCU::AP_IOMCU(AP_HAL::UARTDriver &_uart) :
     uart(_uart)
@@ -61,8 +55,11 @@ void AP_IOMCU::init(void)
     uart.set_blocking_writes(false);
     uart.set_unbuffered_writes(true);
 
-    AP_BoardConfig *boardconfig = AP_BoardConfig::get_singleton();
-    if ((!boardconfig || boardconfig->io_enabled() == 1) && !hal.util->was_watchdog_reset()) {
+    // check IO firmware CRC
+    hal.scheduler->delay(2000);
+    
+    AP_BoardConfig *boardconfig = AP_BoardConfig::get_instance();
+    if (!boardconfig || boardconfig->io_enabled() == 1) {
         check_crc();
     } else {
         crc_is_ok = true;
@@ -186,13 +183,6 @@ void AP_IOMCU::thread_main(void)
             }
         }
 
-        if (mask & EVENT_MASK(IOEVENT_SET_BRUSHED_ON)) {
-            if (!modify_register(PAGE_SETUP, PAGE_REG_SETUP_FEATURES, 0, P_SETUP_FEATURES_BRUSHED)) {
-                event_failed(IOEVENT_SET_BRUSHED_ON);
-                continue;
-            }
-        }
-        
         if (mask & EVENT_MASK(IOEVENT_SET_SAFETY_MASK)) {
             if (!write_register(PAGE_SETUP, PAGE_REG_SETUP_IGNORE_SAFETY, pwm_out.safety_mask)) {
                 event_failed(IOEVENT_SET_SAFETY_MASK);
@@ -300,15 +290,13 @@ void AP_IOMCU::read_status()
     uint16_t *r = (uint16_t *)&reg_status;
     read_registers(PAGE_STATUS, 0, sizeof(reg_status)/2, r);
 
-    check_iomcu_reset();
-
     if (reg_status.flag_safety_off == 0) {
         // if the IOMCU is indicating that safety is on, then force a
         // re-check of the safety options. This copes with a IOMCU reset
         last_safety_options = 0xFFFF;
 
         // also check if the safety should be definately off.
-        AP_BoardConfig *boardconfig = AP_BoardConfig::get_singleton();
+        AP_BoardConfig *boardconfig = AP_BoardConfig::get_instance();
         if (!boardconfig) {
             return;
         }
@@ -424,11 +412,7 @@ bool AP_IOMCU::read_registers(uint8_t page, uint8_t offset, uint8_t count, uint1
         return false;
     }
     memcpy(regs, pkt.regs, count*2);
-    if (protocol_fail_count > IOMCU_MAX_REPEATED_FAILURES) {
-        handle_repeated_failures();
-    }
     protocol_fail_count = 0;
-    protocol_count++;
     return true;
 }
 
@@ -493,11 +477,7 @@ bool AP_IOMCU::write_registers(uint8_t page, uint8_t offset, uint8_t count, cons
         protocol_fail_count++;
         return false;
     }
-    if (protocol_fail_count > IOMCU_MAX_REPEATED_FAILURES) {
-        handle_repeated_failures();
-    }
     protocol_fail_count = 0;
-    protocol_count++;
     return true;
 }
 
@@ -659,16 +639,10 @@ void AP_IOMCU::set_oneshot_mode(void)
     trigger_event(IOEVENT_SET_ONESHOT_ON);
 }
 
-// setup for brushed mode
-void AP_IOMCU::set_brushed_mode(void)
-{
-    trigger_event(IOEVENT_SET_BRUSHED_ON);
-}
-
 // handling of BRD_SAFETYOPTION parameter
 void AP_IOMCU::update_safety_options(void)
 {
-    AP_BoardConfig *boardconfig = AP_BoardConfig::get_singleton();
+    AP_BoardConfig *boardconfig = AP_BoardConfig::get_instance();
     if (!boardconfig) {
         return;
     }
@@ -798,7 +772,7 @@ void AP_IOMCU::set_safety_mask(uint16_t chmask)
  */
 bool AP_IOMCU::healthy(void)
 {
-    return crc_is_ok && protocol_fail_count == 0 && !detected_io_reset;
+    return crc_is_ok && protocol_fail_count == 0;
 }
 
 /*
@@ -840,15 +814,15 @@ bool AP_IOMCU::setup_mixing(RCMapper *rcmap, int8_t override_chan,
 
     // update mixing structure, checking for changes
     for (uint8_t i=0; i<IOMCU_MAX_CHANNELS; i++) {
-        const SRV_Channel *c = SRV_Channels::srv_channel(i);
-        if (!c) {
+        const SRV_Channel *ch = SRV_Channels::srv_channel(i);
+        if (!ch) {
             continue;
         }
-        MIX_UPDATE(mixing.servo_trim[i], c->get_trim());
-        MIX_UPDATE(mixing.servo_min[i], c->get_output_min());
-        MIX_UPDATE(mixing.servo_max[i], c->get_output_max());
-        MIX_UPDATE(mixing.servo_function[i], c->get_function());
-        MIX_UPDATE(mixing.servo_reversed[i], c->get_reversed());
+        MIX_UPDATE(mixing.servo_trim[i], ch->get_trim());
+        MIX_UPDATE(mixing.servo_min[i], ch->get_output_min());
+        MIX_UPDATE(mixing.servo_max[i], ch->get_output_max());
+        MIX_UPDATE(mixing.servo_function[i], ch->get_function());
+        MIX_UPDATE(mixing.servo_reversed[i], ch->get_reversed());
     }
     // update RCMap
     MIX_UPDATE(mixing.rc_channel[0], rcmap->roll());
@@ -856,17 +830,17 @@ bool AP_IOMCU::setup_mixing(RCMapper *rcmap, int8_t override_chan,
     MIX_UPDATE(mixing.rc_channel[2], rcmap->throttle());
     MIX_UPDATE(mixing.rc_channel[3], rcmap->yaw());
     for (uint8_t i=0; i<4; i++) {
-        const RC_Channel *c = RC_Channels::rc_channel(mixing.rc_channel[i]-1);
-        if (!c) {
+        const RC_Channel *ch = RC_Channels::rc_channel(mixing.rc_channel[i]-1);
+        if (!ch) {
             continue;
         }
-        MIX_UPDATE(mixing.rc_min[i], c->get_radio_min());
-        MIX_UPDATE(mixing.rc_max[i], c->get_radio_max());
-        MIX_UPDATE(mixing.rc_trim[i], c->get_radio_trim());
-        MIX_UPDATE(mixing.rc_reversed[i], c->get_reverse());
+        MIX_UPDATE(mixing.rc_min[i], ch->get_radio_min());
+        MIX_UPDATE(mixing.rc_max[i], ch->get_radio_max());
+        MIX_UPDATE(mixing.rc_trim[i], ch->get_radio_trim());
+        MIX_UPDATE(mixing.rc_reversed[i], ch->get_reverse());
 
         // cope with reversible throttle
-        if (i == 2 && c->get_type() == RC_Channel::RC_CHANNEL_TYPE_ANGLE) {
+        if (i == 2 && ch->get_type() == RC_Channel::RC_CHANNEL_TYPE_ANGLE) {
             MIX_UPDATE(mixing.throttle_is_angle, 1);
         } else {
             MIX_UPDATE(mixing.throttle_is_angle, 0);
@@ -894,49 +868,6 @@ const char *AP_IOMCU::get_rc_protocol(void)
         return nullptr;
     }
     return AP_RCProtocol::protocol_name_from_protocol((AP_RCProtocol::rcprotocol_t)rc_input.data);
-}
-
-/*
-  we have had a series of repeated protocol failures to the
-  IOMCU. This may indicate that the IOMCU has been reset (possibly due
-  to a watchdog).
- */
-void AP_IOMCU::handle_repeated_failures(void)
-{
-    if (protocol_count < 100) {
-        // we're just starting up, ignore initial failures caused by
-        // initial sync with IOMCU
-        return;
-    }
-    AP::internalerror().error(AP_InternalError::error_t::iomcu_fail);
-}
-
-/*
-  check for IOMCU reset (possibly due to a watchdog).
- */
-void AP_IOMCU::check_iomcu_reset(void)
-{
-    if (last_iocmu_timestamp_ms == 0) {
-        // initialisation
-        last_iocmu_timestamp_ms = reg_status.timestamp_ms;
-        return;
-    }
-    uint32_t dt_ms = reg_status.timestamp_ms - last_iocmu_timestamp_ms;
-    last_iocmu_timestamp_ms = reg_status.timestamp_ms;
-    if (dt_ms < 500) {
-        // all OK
-        return;
-    }
-    detected_io_reset = true;
-    AP::internalerror().error(AP_InternalError::error_t::iomcu_reset);
-    hal.console->printf("IOMCU reset\n");
-    // we need to ensure the mixer data and the rates are sent over to
-    // the IOMCU
-    if (mixing.enabled) {
-        trigger_event(IOEVENT_MIXING);
-    }
-    trigger_event(IOEVENT_SET_RATES);
-    trigger_event(IOEVENT_SET_DEFAULT_RATE);
 }
 
 #endif // HAL_WITH_IO_MCU

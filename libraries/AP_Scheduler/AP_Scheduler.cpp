@@ -23,9 +23,8 @@
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Vehicle/AP_Vehicle.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include <AP_InertialSensor/AP_InertialSensor.h>
-#include <AP_InternalError/AP_InternalError.h>
 
 #include <stdio.h>
 
@@ -38,6 +37,8 @@
 #define debug(level, fmt, args...)   do { if ((level) <= _debug.get()) { hal.console->printf(fmt, ##args); }} while (0)
 
 extern const AP_HAL::HAL& hal;
+
+int8_t AP_Scheduler::current_task = -1;
 
 const AP_Param::GroupInfo AP_Scheduler::var_info[] = {
     // @Param: DEBUG
@@ -62,13 +63,13 @@ const AP_Param::GroupInfo AP_Scheduler::var_info[] = {
 AP_Scheduler::AP_Scheduler(scheduler_fastloop_fn_t fastloop_fn) :
     _fastloop_fn(fastloop_fn)
 {
-    if (_singleton) {
+    if (_s_instance) {
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
         AP_HAL::panic("Too many schedulers");
 #endif
         return;
     }
-    _singleton = this;
+    _s_instance = this;
 
     AP_Param::setup_object_defaults(this, var_info);
 
@@ -84,10 +85,10 @@ AP_Scheduler::AP_Scheduler(scheduler_fastloop_fn_t fastloop_fn) :
 /*
  * Get the AP_Scheduler singleton
  */
-AP_Scheduler *AP_Scheduler::_singleton;
-AP_Scheduler *AP_Scheduler::get_singleton()
+AP_Scheduler *AP_Scheduler::_s_instance = nullptr;
+AP_Scheduler *AP_Scheduler::get_instance()
 {
-    return _singleton;
+    return _s_instance;
 }
 
 // initialise the scheduler
@@ -161,7 +162,7 @@ void AP_Scheduler::run(uint32_t time_available)
 
         // run it
         _task_time_started = now;
-        hal.util->persistent_data.scheduler_task = i;
+        current_task = i;
         if (_debug > 1 && _perf_counters && _perf_counters[i]) {
             hal.util->perf_begin(_perf_counters[i]);
         }
@@ -169,7 +170,7 @@ void AP_Scheduler::run(uint32_t time_available)
         if (_debug > 1 && _perf_counters && _perf_counters[i]) {
             hal.util->perf_end(_perf_counters[i]);
         }
-        hal.util->persistent_data.scheduler_task = -1;
+        current_task = -1;
 
         // record the tick counter when we ran. This drives
         // when we next run the event
@@ -232,9 +233,7 @@ float AP_Scheduler::load_average()
 void AP_Scheduler::loop()
 {
     // wait for an INS sample
-    hal.util->persistent_data.scheduler_task = -3;
     AP::ins().wait_for_sample();
-    hal.util->persistent_data.scheduler_task = -1;
 
     const uint32_t sample_time_us = AP_HAL::micros();
     
@@ -248,9 +247,7 @@ void AP_Scheduler::loop()
     // Execute the fast loop
     // ---------------------
     if (_fastloop_fn) {
-        hal.util->persistent_data.scheduler_task = -2;
         _fastloop_fn();
-        hal.util->persistent_data.scheduler_task = -1;
     }
 
     // tell the scheduler one tick has passed
@@ -282,7 +279,7 @@ void AP_Scheduler::update_logging()
         perf_info.update_logging();
     }
     if (_log_performance_bit != (uint32_t)-1 &&
-        AP::logger().should_log(_log_performance_bit)) {
+        DataFlash_Class::instance()->should_log(_log_performance_bit)) {
         Log_Write_Performance();
     }
     perf_info.set_loop_rate(get_loop_rate_hz());
@@ -292,7 +289,6 @@ void AP_Scheduler::update_logging()
 // Write a performance monitoring packet
 void AP_Scheduler::Log_Write_Performance()
 {
-    const AP_HAL::Util::PersistentData &pd = hal.util->persistent_data;
     struct log_Performance pkt = {
         LOG_PACKET_HEADER_INIT(LOG_PERFORMANCE_MSG),
         time_us          : AP_HAL::micros64(),
@@ -300,19 +296,16 @@ void AP_Scheduler::Log_Write_Performance()
         num_loops        : perf_info.get_num_loops(),
         max_time         : perf_info.get_max_time(),
         mem_avail        : hal.util->available_memory(),
-        load             : (uint16_t)(load_average() * 1000),
-        internal_errors  : AP::internalerror().errors(),
-        spi_count        : pd.spi_count,
-        i2c_count        : pd.i2c_count,
+        load             : (uint16_t)(load_average() * 1000)
     };
-    AP::logger().WriteCriticalBlock(&pkt, sizeof(pkt));
+    DataFlash_Class::instance()->WriteCriticalBlock(&pkt, sizeof(pkt));
 }
 
 namespace AP {
 
 AP_Scheduler &scheduler()
 {
-    return *AP_Scheduler::get_singleton();
+    return *AP_Scheduler::get_instance();
 }
 
 };

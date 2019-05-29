@@ -35,7 +35,8 @@ void Copter::failsafe_radio_on_event()
         }
     }
 
-    AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_RADIO, LogErrorCode::FAILSAFE_OCCURRED);
+    // log the error to the dataflash
+    Log_Write_Error(ERROR_SUBSYSTEM_FAILSAFE_RADIO, ERROR_CODE_FAILSAFE_OCCURRED);
 
 }
 
@@ -46,12 +47,12 @@ void Copter::failsafe_radio_off_event()
 {
     // no need to do anything except log the error as resolved
     // user can now override roll, pitch, yaw and throttle and even use flight mode switch to restore previous flight mode
-    AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_RADIO, LogErrorCode::FAILSAFE_RESOLVED);
+    Log_Write_Error(ERROR_SUBSYSTEM_FAILSAFE_RADIO, ERROR_CODE_FAILSAFE_RESOLVED);
 }
 
 void Copter::handle_battery_failsafe(const char *type_str, const int8_t action)
 {
-    AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_BATT, LogErrorCode::FAILSAFE_OCCURRED);
+    Log_Write_Error(ERROR_SUBSYSTEM_FAILSAFE_BATT, ERROR_CODE_FAILSAFE_OCCURRED);
 
     // failsafe check
     if (should_disarm_on_failsafe()) {
@@ -115,8 +116,9 @@ void Copter::failsafe_gcs_check()
     }
 
     // GCS failsafe event has occurred
+    // update state, log to dataflash
     set_failsafe_gcs(true);
-    AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_GCS, LogErrorCode::FAILSAFE_OCCURRED);
+    Log_Write_Error(ERROR_SUBSYSTEM_FAILSAFE_GCS, ERROR_CODE_FAILSAFE_OCCURRED);
 
     // clear overrides so that RC control can be regained with radio.
     RC_Channels::clear_overrides();
@@ -139,7 +141,8 @@ void Copter::failsafe_gcs_check()
 // failsafe_gcs_off_event - actions to take when GCS contact is restored
 void Copter::failsafe_gcs_off_event(void)
 {
-    AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_GCS, LogErrorCode::FAILSAFE_RESOLVED);
+    // log recovery of GCS in logs?
+    Log_Write_Error(ERROR_SUBSYSTEM_FAILSAFE_GCS, ERROR_CODE_FAILSAFE_RESOLVED);
 }
 
 // executes terrain failsafe if data is missing for longer than a few seconds
@@ -156,7 +159,7 @@ void Copter::failsafe_terrain_check()
         if (trigger_event) {
             failsafe_terrain_on_event();
         } else {
-            AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_TERRAIN, LogErrorCode::ERROR_RESOLVED);
+            Log_Write_Error(ERROR_SUBSYSTEM_FAILSAFE_TERRAIN, ERROR_CODE_ERROR_RESOLVED);
             failsafe.terrain = false;
         }
     }
@@ -187,7 +190,7 @@ void Copter::failsafe_terrain_on_event()
 {
     failsafe.terrain = true;
     gcs().send_text(MAV_SEVERITY_CRITICAL,"Failsafe: Terrain data missing");
-    AP::logger().Write_Error(LogErrorSubsystem::FAILSAFE_TERRAIN, LogErrorCode::FAILSAFE_OCCURRED);
+    Log_Write_Error(ERROR_SUBSYSTEM_FAILSAFE_TERRAIN, ERROR_CODE_FAILSAFE_OCCURRED);
 
     if (should_disarm_on_failsafe()) {
         init_disarm_motors();
@@ -211,10 +214,10 @@ void Copter::gpsglitch_check()
     if (ap.gps_glitching != gps_glitching) {
         ap.gps_glitching = gps_glitching;
         if (gps_glitching) {
-            AP::logger().Write_Error(LogErrorSubsystem::GPS, LogErrorCode::GPS_GLITCH);
+            Log_Write_Error(ERROR_SUBSYSTEM_GPS, ERROR_CODE_GPS_GLITCH);
             gcs().send_text(MAV_SEVERITY_CRITICAL,"GPS Glitch");
         } else {
-            AP::logger().Write_Error(LogErrorSubsystem::GPS, LogErrorCode::ERROR_RESOLVED);
+            Log_Write_Error(ERROR_SUBSYSTEM_GPS, ERROR_CODE_ERROR_RESOLVED);
             gcs().send_text(MAV_SEVERITY_CRITICAL,"GPS Glitch cleared");
         }
     }
@@ -266,7 +269,7 @@ bool Copter::should_disarm_on_failsafe() {
         return true;
     }
 
-    switch (control_mode) {
+    switch(control_mode) {
         case STABILIZE:
         case ACRO:
             // if throttle is zero OR vehicle is landed disarm motors

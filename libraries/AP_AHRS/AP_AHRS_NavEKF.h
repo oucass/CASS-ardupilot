@@ -30,6 +30,7 @@
 #include <SITL/SITL.h>
 #endif
 
+#if HAL_CPU_CLASS >= HAL_CPU_CLASS_150
 #include <AP_NavEKF2/AP_NavEKF2.h>
 #include <AP_NavEKF3/AP_NavEKF3.h>
 #include <AP_NavEKF/AP_Nav_Common.h>              // definitions shared by inertial and ekf nav filters
@@ -102,13 +103,13 @@ public:
     const NavEKF3 &get_NavEKF3_const(void) const {
         return EKF3;
     }
-
+    
     // return secondary attitude solution if available, as eulers in radians
     bool get_secondary_attitude(Vector3f &eulers) const override;
 
     // return secondary attitude solution if available, as quaternion
     bool get_secondary_quaternion(Quaternion &quat) const override;
-
+    
     // return secondary position solution if available
     bool get_secondary_position(struct Location &loc) const override;
 
@@ -175,8 +176,6 @@ public:
     // is the AHRS subsystem healthy?
     bool healthy() const override;
 
-    bool prearm_healthy() const override;
-
     // true if the AHRS has completed initialisation
     bool initialised() const override;
 
@@ -189,9 +188,6 @@ public:
 
     // report any reason for why the backend is refusing to initialise
     const char *prearm_failure_reason(void) const override;
-
-    // check all cores providing consistent attitudes for prearm checks
-    bool attitudes_consistent(char *failure_msg, const uint8_t failure_msg_len) const override;
 
     // return the amount of yaw angle change due to the last yaw angle reset in radians
     // returns the time of the last yaw angle reset or 0 if no reset has ever occurred
@@ -218,7 +214,7 @@ public:
 
     // send a EKF_STATUS_REPORT for current EKF
     void send_ekf_status_report(mavlink_channel_t chan) const;
-
+    
     // get_hgt_ctrl_limit - get maximum height to be observed by the control loops in meters and a validity flag
     // this is used to limit height during optical flow navigation
     // it will return invalid when no limiting is required
@@ -278,11 +274,8 @@ private:
     bool _ekf2_started;
     bool _ekf3_started;
     bool _force_ekf;
-    
-    // rotation from vehicle body to NED frame
     Matrix3f _dcm_matrix;
     Vector3f _dcm_attitude;
-    
     Vector3f _gyro_drift;
     Vector3f _gyro_estimate;
     Vector3f _accel_ef_ekf[INS_MAX_INSTANCES];
@@ -298,10 +291,11 @@ private:
 
     // get the index of the current primary IMU
     uint8_t get_primary_IMU_index(void) const;
-
+    
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     SITL::SITL *_sitl;
     uint32_t _last_body_odm_update_ms = 0;
     void update_SITL(void);
 #endif    
 };
+#endif

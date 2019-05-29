@@ -29,6 +29,8 @@
 #define LOG_ARM_DISARM_MSG      0x08
 #define LOG_STEERING_MSG        0x0D
 #define LOG_GUIDEDTARGET_MSG    0x0E
+#define LOG_WHEELENCODER_MSG    0x0F
+#define LOG_ERROR_MSG           0x13
 
 #define TYPE_AIRSTART_MSG       0x00
 #define TYPE_GROUNDSTART_MSG    0x01
@@ -66,6 +68,15 @@
 #define MAVLINK_SET_ATT_TYPE_MASK_THROTTLE_IGNORE      (1<<6)
 #define MAVLINK_SET_ATT_TYPE_MASK_ATTITUDE_IGNORE      (1<<7)
 
+// general error codes
+#define ERROR_CODE_ERROR_RESOLVED       0
+// Error message sub systems and error codes
+#define ERROR_SUBSYSTEM_FAILSAFE_FENCE  9
+#define ERROR_SUBSYSTEM_FLIGHT_MODE     10
+#define ERROR_SUBSYSTEM_CRASH_CHECK     12
+// subsystem specific error codes -- crash checker
+#define ERROR_CODE_CRASH_CHECK_CRASH 1
+
 // radio failsafe enum (FS_THR_ENABLE parameter)
 enum fs_thr_enable {
     FS_THR_DISABLED = 0,
@@ -86,12 +97,7 @@ enum fs_crash_action {
   FS_CRASH_HOLD_AND_DISARM = 2
 };
 
-enum fs_ekf_action {
-    FS_EKF_DISABLE = 0,
-    FS_EFK_HOLD = 1
-};
-
-#define DISTANCE_HOME_MINCHANGE 0.5f  // minimum distance to adjust home location
+#define DISTANCE_HOME_MAX 0.5f  // Distance max to home location before changing it when disarm
 
 enum mode_reason_t {
     MODE_REASON_INITIALISED = 0,
@@ -102,7 +108,6 @@ enum mode_reason_t {
     MODE_REASON_CRASH_FAILSAFE,
     MODE_REASON_MISSION_COMMAND,
     MODE_REASON_FENCE_BREACH,
-    MODE_REASON_EKF_FAILSAFE,
 };
 
 enum pilot_steer_type_t {

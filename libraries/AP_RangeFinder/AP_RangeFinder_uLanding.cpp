@@ -33,10 +33,9 @@ extern const AP_HAL::HAL& hal;
    already know that we should setup the rangefinder
 */
 AP_RangeFinder_uLanding::AP_RangeFinder_uLanding(RangeFinder::RangeFinder_State &_state,
-                                                 AP_RangeFinder_Params &_params,
                                                  AP_SerialManager &serial_manager,
                                                  uint8_t serial_instance) :
-    AP_RangeFinder_Backend(_state, _params)
+    AP_RangeFinder_Backend(_state)
 {
     uart = serial_manager.find_serial(AP_SerialManager::SerialProtocol_Rangefinder, serial_instance);
     if (uart != nullptr) {
@@ -174,7 +173,7 @@ bool AP_RangeFinder_uLanding::get_reading(uint16_t &reading_cm)
                  */
                 continue;
             } else {
-                if (_version == 0 && _header != ULANDING_HDR) {
+                if (_version == 0) {
                     // parse data for Firmware Version #0
                     sum += (_linebuf[2]&0x7F)*128 + (_linebuf[1]&0x7F);
                     count++;
@@ -199,7 +198,7 @@ bool AP_RangeFinder_uLanding::get_reading(uint16_t &reading_cm)
 
     reading_cm = sum / count;
 
-    if (_version == 0 && _header != ULANDING_HDR) {
+    if (_version == 0) {
         reading_cm *= 2.5f;
     }
 

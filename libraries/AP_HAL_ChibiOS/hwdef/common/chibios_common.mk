@@ -33,7 +33,7 @@ endif
 
 # FPU-related options
 ifeq ($(USE_FPU),)
-  USE_FPU = hard
+  USE_FPU = no
 endif
 ifneq ($(USE_FPU),no)
   OPT    += $(USE_FPU_OPT)

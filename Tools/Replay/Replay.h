@@ -23,10 +23,11 @@
 #include <AP_AccelCal/AP_AccelCal.h>
 #include <AP_Declination/AP_Declination.h>
 #include <Filter/Filter.h>
+#include <AP_Buffer/AP_Buffer.h>
 #include <AP_Airspeed/AP_Airspeed.h>
 #include <AP_Vehicle/AP_Vehicle.h>
 #include <AP_Notify/AP_Notify.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <AP_GPS/AP_GPS.h>
 #include <AP_AHRS/AP_AHRS.h>
@@ -60,7 +61,7 @@ public:
     AP_GPS gps;
     Compass compass;
     AP_SerialManager serial_manager;
-    RangeFinder rng{serial_manager};
+    RangeFinder rng{serial_manager, ROTATION_PITCH_270};
     NavEKF2 EKF2{&ahrs, rng};
     NavEKF3 EKF3{&ahrs, rng};
     AP_AHRS_NavEKF ahrs{EKF2, EKF3};
@@ -69,7 +70,7 @@ public:
     AP_Int32 unused; // logging is magic for Replay; this is unused
     struct LogStructure log_structure[256] = {
     };
-    AP_Logger logger{unused};
+    DataFlash_Class dataflash{unused};
 
 private:
     Parameters g;
@@ -91,7 +92,7 @@ public:
     void setup() override;
     void loop() override;
 
-    void flush_logger(void);
+    void flush_dataflash(void);
     void show_packet_counts();
 
     bool check_solution = false;
@@ -124,7 +125,7 @@ private:
             _vehicle.compass,
             _vehicle.gps,
             _vehicle.airspeed,
-            _vehicle.logger,
+            _vehicle.dataflash,
             _vehicle.log_structure,
             0,
             nottypes};

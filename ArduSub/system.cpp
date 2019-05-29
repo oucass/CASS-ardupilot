@@ -27,6 +27,8 @@ void Sub::init_ardupilot()
                         AP::fwversion().fw_string,
                         (unsigned)hal.util->available_memory());
 
+    init_capabilities();
+
     // load parameters from EEPROM
     load_parameters();
 
@@ -85,6 +87,8 @@ void Sub::init_ardupilot()
     log_init();
 #endif
 
+    gcs().set_dataflash(&DataFlash);
+
     // initialise rc channels including setting mode
     rc().init();
 
@@ -104,8 +108,9 @@ void Sub::init_ardupilot()
     gps.set_log_gps_bit(MASK_LOG_GPS);
     gps.init(serial_manager);
 
-    AP::compass().set_log_bit(MASK_LOG_COMPASS);
-    AP::compass().init();
+    if (g.compass_enabled) {
+        init_compass();
+    }
 
 #if OPTFLOW == ENABLED
     // make optflow available to AHRS
@@ -114,7 +119,7 @@ void Sub::init_ardupilot()
 
     // init Location class
 #if AP_TERRAIN_AVAILABLE && AC_TERRAIN
-    Location::set_terrain(&terrain);
+    Location_Class::set_terrain(&terrain);
     wp_nav.set_terrain(&terrain);
 #endif
 
@@ -182,18 +187,13 @@ void Sub::init_ardupilot()
     // initialise mission library
     mission.init();
 
-    // initialise AP_Logger library
+    // initialise DataFlash library
 #if LOGGING_ENABLED == ENABLED
-    logger.setVehicle_Startup_Writer(FUNCTOR_BIND(&sub, &Sub::Log_Write_Vehicle_Startup_Messages, void));
+    DataFlash.set_mission(&mission);
+    DataFlash.setVehicle_Startup_Log_Writer(FUNCTOR_BIND(&sub, &Sub::Log_Write_Vehicle_Startup_Messages, void));
 #endif
 
     startup_INS_ground();
-
-#ifdef ENABLE_SCRIPTING
-    if (!g2.scripting.init()) {
-        gcs().send_text(MAV_SEVERITY_ERROR, "Scripting failed to start");
-    }
-#endif // ENABLE_SCRIPTING
 
     // we don't want writes to the serial port to cause us to pause
     // mid-flight, so set the serial ports non-blocking once we are
@@ -292,8 +292,8 @@ bool Sub::optflow_position_ok()
 bool Sub::should_log(uint32_t mask)
 {
 #if LOGGING_ENABLED == ENABLED
-    ap.logging_started = logger.logging_started();
-    return logger.should_log(mask);
+    ap.logging_started = DataFlash.logging_started();
+    return DataFlash.should_log(mask);
 #else
     return false;
 #endif

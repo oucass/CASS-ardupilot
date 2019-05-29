@@ -21,7 +21,8 @@
 
 bool AP_Rally_Rover::is_valid(const Location &rally_point) const
 {
-    if (!rover.g2.fence.check_destination_within_fence(rally_point)) {
+    Location_Class rally_loc(rally_point);
+    if (!rover.g2.fence.check_destination_within_fence(rally_loc)) {
         return false;
     }
     return true;

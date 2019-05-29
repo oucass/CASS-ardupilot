@@ -23,7 +23,7 @@
 #include <AP_Param/AP_Param.h>
 #include <AP_Vehicle/AP_Vehicle.h>
 #include <AP_SpdHgtControl/AP_SpdHgtControl.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include <AP_Landing/AP_Landing.h>
 
 class AP_TECS : public AP_SpdHgtControl {
@@ -222,8 +222,9 @@ private:
     float _TASmax;
     float _TASmin;
 
-    // Current true airspeed demand
+    // Current and last true airspeed demand
     float _TAS_dem;
+    float _TAS_dem_last;
 
     // Equivalent airspeed demand
     float _EAS_dem;

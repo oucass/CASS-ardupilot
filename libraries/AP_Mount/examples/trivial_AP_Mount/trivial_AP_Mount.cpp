@@ -11,6 +11,7 @@
 #include <AP_Declination/AP_Declination.h>
 #include <AP_Airspeed/AP_Airspeed.h>
 #include <AP_Baro/AP_Baro.h>
+#include <AP_Buffer/AP_Buffer.h>
 #include <Filter/Filter.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <AP_Mission/AP_Mission.h>
@@ -19,7 +20,7 @@
 #include <RC_Channel/RC_Channel.h>
 #include <AP_Airspeed/AP_Airspeed.h>
 #include <AP_Vehicle/AP_Vehicle.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include <AP_Notify/AP_Notify.h>
 #include <AP_BattMonitor/AP_BattMonitor.h>
 

@@ -15,7 +15,7 @@ def is_pin(str):
         return False
     if str[0] != 'P':
         return False
-    if str[1] not in "ABCDEFGHIJK":
+    if str[1] not in "ABCDEFGH":
         return False
     try:
         p = int(str[2:])

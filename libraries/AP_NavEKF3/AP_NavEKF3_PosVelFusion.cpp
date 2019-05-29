@@ -1,5 +1,7 @@
 #include <AP_HAL/AP_HAL.h>
 
+#if HAL_CPU_CLASS >= HAL_CPU_CLASS_150
+
 #include "AP_NavEKF3.h"
 #include "AP_NavEKF3_core.h"
 #include <AP_AHRS/AP_AHRS.h>
@@ -429,7 +431,7 @@ void NavEKF3_core::FuseVelPosNED()
             }
             R_OBS[4] = R_OBS[3];
             // For data integrity checks we use the same measurement variances as used to calculate the Kalman gains for all measurements except GPS horizontal velocity
-            // For horizontal GPS velocity we don't want the acceptance radius to increase with reported GPS accuracy so we use a value based on best GPS performance
+            // For horizontal GPs velocity we don't want the acceptance radius to increase with reported GPS accuracy so we use a value based on best GPs perfomrance
             // plus a margin for manoeuvres. It is better to reject GPS horizontal velocity errors early
             for (uint8_t i=0; i<=2; i++) R_OBS_DATA_CHECKS[i] = sq(constrain_float(frontend->_gpsHorizVelNoise, 0.05f, 5.0f)) + sq(frontend->gpsNEVelVarAccScale * accNavMag);
         }
@@ -636,7 +638,7 @@ void NavEKF3_core::FuseVelPosNED()
                     memset(&Kfusion[10], 0, 12);
                 }
 
-                // inhibit delta velocity bias state estimation by setting Kalman gains to zero
+                // inhibit delta velocity bias state estmation by setting Kalman gains to zero
                 if (!inhibitDelVelBiasStates) {
                     for (uint8_t i = 13; i<=15; i++) {
                         Kfusion[i] = P[i][stateIndex]*SK;
@@ -688,7 +690,7 @@ void NavEKF3_core::FuseVelPosNED()
                         }
                     }
 
-                    // force the covariance matrix to be symmetrical and limit the variances to prevent ill-conditioning.
+                    // force the covariance matrix to be symmetrical and limit the variances to prevent ill-condiioning.
                     ForceSymmetry();
                     ConstrainVariances();
 
@@ -1522,7 +1524,7 @@ void NavEKF3_core::FuseBodyVel()
                     }
                 }
 
-                // force the covariance matrix to be symmetrical and limit the variances to prevent ill-conditioning.
+                // force the covariance matrix to be symmetrical and limit the variances to prevent ill-condiioning.
                 ForceSymmetry();
                 ConstrainVariances();
 
@@ -1607,3 +1609,4 @@ void NavEKF3_core::SelectBodyOdomFusion()
     }
 }
 
+#endif // HAL_CPU_CLASS

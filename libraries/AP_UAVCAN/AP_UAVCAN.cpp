@@ -19,6 +19,7 @@
 #include <AP_HAL/AP_HAL.h>
 
 #if HAL_WITH_UAVCAN
+
 #include "AP_UAVCAN.h"
 #include <GCS_MAVLink/GCS.h>
 
@@ -37,13 +38,10 @@
 #include <uavcan/equipment/indication/RGB565.hpp>
 
 #include <AP_Baro/AP_Baro_UAVCAN.h>
-#include <AP_RangeFinder/AP_RangeFinder_UAVCAN.h>
 #include <AP_GPS/AP_GPS_UAVCAN.h>
 #include <AP_BattMonitor/AP_BattMonitor_UAVCAN.h>
 #include <AP_Compass/AP_Compass_UAVCAN.h>
 #include <AP_Airspeed/AP_Airspeed_UAVCAN.h>
-#include <SRV_Channel/SRV_Channel.h>
-#include <AP_OpticalFlow/AP_OpticalFlow_HereFlow.h>
 
 #define LED_DELAY_US 50000
 
@@ -100,7 +98,8 @@ static uavcan::Publisher<uavcan::equipment::esc::RawCommand>* esc_raw[MAX_NUMBER
 static uavcan::Publisher<uavcan::equipment::indication::LightsCommand>* rgb_led[MAX_NUMBER_OF_CAN_DRIVERS];
 
 AP_UAVCAN::AP_UAVCAN() :
-    _node_allocator()
+    _node_allocator(
+        UAVCAN_NODE_POOL_SIZE, UAVCAN_NODE_POOL_SIZE)
 {
     AP_Param::setup_object_defaults(this, var_info);
 
@@ -125,7 +124,7 @@ AP_UAVCAN *AP_UAVCAN::get_uavcan(uint8_t driver_index)
     return static_cast<AP_UAVCAN*>(AP::can().get_driver(driver_index));
 }
 
-void AP_UAVCAN::init(uint8_t driver_index, bool enable_filters)
+void AP_UAVCAN::init(uint8_t driver_index)
 {
     if (_initialized) {
         debug_uavcan(2, "UAVCAN: init called more than once\n\r");
@@ -181,14 +180,6 @@ void AP_UAVCAN::init(uint8_t driver_index, bool enable_filters)
 
     hw_version.major = AP_UAVCAN_HW_VERS_MAJOR;
     hw_version.minor = AP_UAVCAN_HW_VERS_MINOR;
-
-    const uint8_t uid_buf_len = hw_version.unique_id.capacity();
-    uint8_t uid_len = uid_buf_len;
-    uint8_t unique_id[uid_buf_len];
-
-    if (hal.util->get_system_id_unformatted(unique_id, uid_len)) {
-        uavcan::copy(unique_id, unique_id + uid_len, hw_version.unique_id.begin());
-    }
     _node->setHardwareVersion(hw_version);
 
     int start_res = _node->start();
@@ -197,18 +188,12 @@ void AP_UAVCAN::init(uint8_t driver_index, bool enable_filters)
         return;
     }
 
-    //Start Servers
-#ifdef HAS_UAVCAN_SERVERS
-    _servers.init(*_node);
-#endif
     // Roundup all subscribers from supported drivers
     AP_GPS_UAVCAN::subscribe_msgs(this);
     AP_Compass_UAVCAN::subscribe_msgs(this);
     AP_Baro_UAVCAN::subscribe_msgs(this);
     AP_BattMonitor_UAVCAN::subscribe_msgs(this);
     AP_Airspeed_UAVCAN::subscribe_msgs(this);
-    AP_OpticalFlow_HereFlow::subscribe_msgs(this);
-    AP_RangeFinder_UAVCAN::subscribe_msgs(this);
 
     act_out_array[driver_index] = new uavcan::Publisher<uavcan::equipment::actuator::ArrayCommand>(*_node);
     act_out_array[driver_index]->setTxTimeout(uavcan::MonotonicDuration::fromMSec(2));
@@ -223,9 +208,8 @@ void AP_UAVCAN::init(uint8_t driver_index, bool enable_filters)
     rgb_led[driver_index]->setPriority(uavcan::TransferPriority::OneHigherThanLowest);
 
     _led_conf.devices_count = 0;
-    if (enable_filters) {
-        configureCanAcceptanceFilters(*_node);
-    }
+
+    configureCanAcceptanceFilters(*_node);
 
     /*
      * Informing other nodes that we're ready to work.

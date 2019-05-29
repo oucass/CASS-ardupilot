@@ -21,6 +21,7 @@ void Plane::parachute_release()
     if (parachute.release_in_progress()) {
         return;
     }
+    // send message to gcs and dataflash
     if (parachute.released()) {
         gcs().send_text(MAV_SEVERITY_CRITICAL,"Parachute: Released again");
     } else {
@@ -64,4 +65,5 @@ bool Plane::parachute_manual_release()
 #endif
     return true;    
 }
+
 #endif

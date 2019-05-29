@@ -70,7 +70,7 @@ bool Sub::set_mode(control_mode_t mode, mode_reason_t reason)
 
         control_mode = mode;
         control_mode_reason = reason;
-        logger.Write_Mode(control_mode, control_mode_reason);
+        DataFlash.Log_Write_Mode(control_mode, control_mode_reason);
 
         // update notify object
         notify_flight_mode(control_mode);
@@ -87,7 +87,7 @@ bool Sub::set_mode(control_mode_t mode, mode_reason_t reason)
 #endif
     } else {
         // Log error that we failed to enter desired flight mode
-        AP::logger().Write_Error(LogErrorSubsystem::FLIGHT_MODE, LogErrorCode(mode));
+        Log_Write_Error(ERROR_SUBSYSTEM_FLIGHT_MODE,mode);
     }
 
     // return success or failure

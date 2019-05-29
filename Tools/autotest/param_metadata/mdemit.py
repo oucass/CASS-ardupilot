@@ -45,7 +45,7 @@ class MDEmit(Emit):
     def start_libraries(self):
         pass
 
-    def emit(self, g):
+    def emit(self, g, f):
         nparam = False # Flag indicating this is a parameter group with redundant information (ie RCn_, SERVOn_)
         
         if g.name == 'ArduSub':

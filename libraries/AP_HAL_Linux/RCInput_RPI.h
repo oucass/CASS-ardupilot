@@ -82,8 +82,8 @@ public:
 class RCInput_RPI : public RCInput
 {
 public:
-    void init() override;
-    void _timer_tick(void) override;
+    void init();
+    void _timer_tick(void);
     RCInput_RPI();
     ~RCInput_RPI();
 

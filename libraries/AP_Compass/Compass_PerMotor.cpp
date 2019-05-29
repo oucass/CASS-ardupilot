@@ -4,7 +4,6 @@
 
 #include "AP_Compass.h"
 #include <GCS_MAVLink/GCS.h>
-#include <SRV_Channel/SRV_Channel.h>
 
 extern const AP_HAL::HAL &hal;
 
@@ -117,7 +116,7 @@ float Compass_PerMotor::scaled_output(uint8_t motor)
     uint16_t pwm = hal.rcout->read_last_sent(motor_map[motor]);
 
     // get 0 to 1 motor demand
-    float output = (hal.rcout->scale_esc_to_unity(pwm)+1) * 0.5f;
+    float output = (hal.rcout->scale_esc_to_unity(pwm)+1) * 0.5;
 
     if (output <= 0) {
         return 0;

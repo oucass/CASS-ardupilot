@@ -21,7 +21,7 @@
  */
 
 #include <AP_HAL/AP_HAL.h>
-#include <AP_Math/crc.h>
+#include <AP_Math/edc.h>
 #include <AP_AHRS/AP_AHRS.h>
 #include <utility>
 #include "OpticalFlow.h"
@@ -86,6 +86,7 @@ AP_OpticalFlow_Pixart::AP_OpticalFlow_Pixart(const char *devname, OpticalFlow &_
     _dev = std::move(hal.spi->get_device(devname));
 }
 
+
 // detect the device
 AP_OpticalFlow_Pixart *AP_OpticalFlow_Pixart::detect(const char *devname, OpticalFlow &_frontend)
 {
@@ -141,10 +142,10 @@ bool AP_OpticalFlow_Pixart::setup_sensor(void)
             debug("Pixart: bad SROM ID: 0x%02x\n", id);
             return false;
         }
-
+        
         reg_write(PIXART_REG_SROM_EN, 0x15);
         hal.scheduler->delay(10);
-
+    
         crc = reg_read16u(PIXART_REG_DOUT_L);
         if (crc != 0xBEEF) {
             debug("Pixart: bad SROM CRC: 0x%04x\n", crc);
@@ -169,6 +170,7 @@ bool AP_OpticalFlow_Pixart::setup_sensor(void)
     _dev->register_periodic_callback(2000, FUNCTOR_BIND_MEMBER(&AP_OpticalFlow_Pixart::timer, void));
     return true;
 }
+
 
 // write an 8 bit register
 void AP_OpticalFlow_Pixart::reg_write(uint8_t reg, uint8_t value)
@@ -208,6 +210,7 @@ int16_t AP_OpticalFlow_Pixart::reg_read16s(uint8_t reg)
 {
     return (int16_t)reg_read16u(reg);
 }
+
 
 void AP_OpticalFlow_Pixart::srom_download(void)
 {
@@ -251,13 +254,14 @@ void AP_OpticalFlow_Pixart::load_configuration(const RegData *init_data, uint16_
     }
 }
 
+
 void AP_OpticalFlow_Pixart::motion_burst(void)
 {
     uint8_t *b = (uint8_t *)&burst;
 
     burst.delta_x = 0;
     burst.delta_y = 0;
-
+    
     _dev->set_chip_select(true);
     uint8_t reg = model==PIXART_3900?PIXART_REG_MOT_BURST:PIXART_REG_MOT_BURST2;
 
@@ -296,7 +300,7 @@ void AP_OpticalFlow_Pixart::timer(void)
         integral.last_frame_us = last_burst_us;
         integral.gyro += Vector2f(gyro.x, gyro.y) * dt;
     }
-
+    
 #if 0
     static uint32_t last_print_ms;
     static int fd = -1;
@@ -308,7 +312,7 @@ void AP_OpticalFlow_Pixart::timer(void)
     static int32_t sum_y;
     sum_x += burst.delta_x;
     sum_y += burst.delta_y;
-
+    
     uint32_t now = AP_HAL::millis();
     if (now - last_print_ms >= 100 && (sum_x != 0 || sum_y != 0)) {
         last_print_ms = now;
@@ -328,10 +332,11 @@ void AP_OpticalFlow_Pixart::update(void)
         return;
     }
     last_update_ms = now;
-
+    
     struct OpticalFlow::OpticalFlow_state state;
+    state.device_id = 1;
     state.surface_quality = burst.squal;
-
+    
     if (integral.sum_us > 0) {
         WITH_SEMAPHORE(_sem);
 
@@ -339,14 +344,14 @@ void AP_OpticalFlow_Pixart::update(void)
         float flowScaleFactorX = 1.0f + 0.001f * flowScaler.x;
         float flowScaleFactorY = 1.0f + 0.001f * flowScaler.y;
         float dt = integral.sum_us * 1.0e-6;
-
+        
         state.flowRate = Vector2f(integral.sum.x * flowScaleFactorX,
                                   integral.sum.y * flowScaleFactorY);
         state.flowRate *= flow_pixel_scaling / dt;
 
         // we only apply yaw to flowRate as body rate comes from AHRS
         _applyYaw(state.flowRate);
-
+        
         state.bodyRate = integral.gyro / dt;
 
         integral.sum.zero();

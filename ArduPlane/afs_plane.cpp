@@ -4,7 +4,6 @@
 
 #include "Plane.h"
 
-#if ADVANCED_FAILSAFE == ENABLED
 // Constructor
 AP_AdvancedFailsafe_Plane::AP_AdvancedFailsafe_Plane(AP_Mission &_mission, const AP_GPS &_gps) :
     AP_AdvancedFailsafe(_mission, _gps)
@@ -87,9 +86,8 @@ AP_AdvancedFailsafe::control_mode AP_AdvancedFailsafe_Plane::afs_mode(void)
     if (plane.auto_throttle_mode) {
         return AP_AdvancedFailsafe::AFS_AUTO;
     }
-    if (plane.control_mode == &plane.mode_manual) {
+    if (plane.control_mode == MANUAL) {
         return AP_AdvancedFailsafe::AFS_MANUAL;
     }
     return AP_AdvancedFailsafe::AFS_STABILIZED;
 }
-#endif // ADVANCED_FAILSAFE

@@ -26,7 +26,7 @@ class AP_RCProtocol_Backend;
 class AP_RCProtocol {
 public:
     AP_RCProtocol() {
-        _singleton = this;
+        instance = this;
     }
     ~AP_RCProtocol();
 
@@ -79,8 +79,8 @@ public:
     }
     
     // access to singleton
-    static AP_RCProtocol *get_singleton(void) {
-        return _singleton;
+    static AP_RCProtocol *get_instance(void) {
+        return instance;
     }
 
 private:
@@ -93,7 +93,7 @@ private:
     bool _valid_serial_prot = false;
     uint8_t _good_frames[NONE];
 
-    static AP_RCProtocol *_singleton;
+    static AP_RCProtocol *instance;
 };
 
 #include "AP_RCProtocol_Backend.h"

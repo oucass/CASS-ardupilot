@@ -9,7 +9,6 @@ import fnmatch
 import glob
 import optparse
 import os
-import re
 import shutil
 import signal
 import subprocess
@@ -21,7 +20,6 @@ import apmrover2
 import arducopter
 import arduplane
 import ardusub
-import antennatracker
 import quadplane
 import balancebot
 
@@ -111,20 +109,30 @@ def build_binaries():
     copy_gm = util.reltopdir('./generate_manifest.py')
     shutil.copy2(orig_gm, copy_gm)
 
-    # and gen_stable.py
-    orig_gs = util.reltopdir('Tools/scripts/gen_stable.py')
-    copy_gs = util.reltopdir('./gen_stable.py')
-    shutil.copy2(orig_gs, copy_gs)
-    
     if util.run_cmd(copy, directory=util.reltopdir('.')) != 0:
         print("Failed build_binaries.py")
         return False
     return True
 
 
+def build_devrelease():
+    """Run the build_devrelease.sh script."""
+    print("Running build_devrelease.sh")
+    # copy the script as it changes git branch, which can change the
+    # script while running
+    orig = util.reltopdir('Tools/scripts/build_devrelease.sh')
+    copy = util.reltopdir('./build_devrelease.sh')
+    shutil.copy2(orig, copy)
+
+    if util.run_cmd(copy, directory=util.reltopdir('.')) != 0:
+        print("Failed build_devrelease.sh")
+        return False
+    return True
+
+
 def build_examples():
     """Build examples."""
-    for target in 'fmuv2', 'Pixhawk1', 'navio', 'linux':
+    for target in 'fmuv2', 'px4-v2', 'navio', 'linux':
         print("Running build.examples for %s" % target)
         try:
             util.build_examples(target)
@@ -228,7 +236,6 @@ def alarm_handler(signum, frame):
     """Handle test timeout."""
     global results, opts
     try:
-        print("Alarm handler called")
         results.add('TIMEOUT',
                     '<span class="failed-text">FAILED</span>',
                     opts.timeout)
@@ -257,8 +264,7 @@ __bin_names = {
     "CopterAVC": "arducopter-heli",
     "QuadPlane": "arduplane",
     "ArduSub": "ardusub",
-    "balancebot": "ardurover",
-    "BalanceBot": "ardurover",
+    "balancebot": "ardurover"
 }
 
 
@@ -286,47 +292,6 @@ def binary_path(step, debug=False):
 
     return binary
 
-def split_specific_test_step(step):
-    print('step=%s' % str(step))
-    m = re.match("((fly|drive|dive|test)[.][^.]+)[.](.*)", step)
-    if m is None:
-        return None
-    return ( (m.group(1), m.group(3)) )
-
-def find_specific_test_to_run(step):
-    t = split_specific_test_step(step)
-    if t is None:
-        return None
-    (testname, test) = t
-    return "%s.%s" % (testname, test)
-
-tester_class_map = {
-    "fly.ArduCopter": arducopter.AutoTestCopter,
-    "fly.ArduPlane": arduplane.AutoTestPlane,
-    "fly.QuadPlane": quadplane.AutoTestQuadPlane,
-    "drive.APMrover2": apmrover2.AutoTestRover,
-    "drive.balancebot": balancebot.AutoTestBalanceBot,
-    "fly.CopterAVC": arducopter.AutoTestHeli,
-    "dive.ArduSub": ardusub.AutoTestSub,
-    "test.AntennaTracker": antennatracker.AutoTestTracker,
-}
-
-def run_specific_test(step, *args, **kwargs):
-    t = split_specific_test_step(step)
-    if t is None:
-        return []
-    (testname, test) = t
-
-    tester_class = tester_class_map[testname]
-    tester = tester_class(*args, **kwargs)
-
-    print("Got %s" % str(tester))
-    for a in tester.tests():
-        print("Got %s" % (a[0]))
-        if a[0] == test:
-            return tester.run_tests([a])
-    print("Failed to find test %s on %s" % (test, testname))
-    sys.exit(1)
 
 def run_step(step):
     """Run one step."""
@@ -380,26 +345,52 @@ def run_step(step):
         "gdb": opts.gdb,
         "gdbserver": opts.gdbserver,
         "breakpoints": opts.breakpoint,
-        "frame": opts.frame,
-        "_show_test_timings": opts.show_test_timings,
     }
     if opts.speedup is not None:
         fly_opts["speedup"] = opts.speedup
 
-    # handle "fly.ArduCopter" etc:
-    if step in tester_class_map:
-        t = tester_class_map[step](binary, **fly_opts)
-        return (t.autotest(), t)
+    if step == 'fly.ArduCopter':
+        tester = arducopter.AutoTestCopter(binary,
+                                           frame=opts.frame,
+                                           **fly_opts)
+        return tester.autotest()
 
-    specific_test_to_run = find_specific_test_to_run(step)
-    if specific_test_to_run is not None:
-        return run_specific_test(specific_test_to_run, binary, **fly_opts)
+    if step == 'fly.CopterAVC':
+        tester = arducopter.AutoTestCopter(binary, **fly_opts)
+        return tester.autotest_heli()
+
+    if step == 'fly.ArduPlane':
+        tester = arduplane.AutoTestPlane(binary, **fly_opts)
+        return tester.autotest()
+
+    if step == 'fly.QuadPlane':
+        tester = quadplane.AutoTestQuadPlane(binary, **fly_opts)
+        return tester.autotest()
+
+    if step == 'drive.APMrover2':
+        tester = apmrover2.AutoTestRover(binary,
+                                         frame=opts.frame,
+                                         **fly_opts)
+        return tester.autotest()
+
+    if step == 'drive.balancebot':
+        tester = balancebot.AutoTestBalanceBot(binary,
+                                               frame=opts.frame,
+                                               **fly_opts)
+        return tester.autotest()
+
+    if step == 'dive.ArduSub':
+        tester = ardusub.AutoTestSub(binary, **fly_opts)
+        return tester.autotest()
 
     if step == 'build.All':
         return build_all()
 
     if step == 'build.Binaries':
         return build_binaries()
+
+    if step == 'build.DevRelease':
+        return build_devrelease()
 
     if step == 'build.examples':
         return build_examples()
@@ -470,31 +461,6 @@ class TestResults(object):
         for f in glob.glob(buildlogs_path(pattern)):
             self.addimage(name, os.path.basename(f))
 
-    def generate_badge(self):
-        """
-        Gets the badge template, populates and saves the result to buildlogs
-        path.
-        """
-        passed_tests = len([t for t in self.tests if "PASSED" in t.result])
-        total_tests = len(self.tests)
-        badge_color = "#4c1" if passed_tests == total_tests else "#e05d44"
-
-        badge_text = "{0}/{1}".format(passed_tests, total_tests)
-        # Text length so it is not stretched by svg
-        text_length = len(badge_text) * 70
-
-        # Load template file
-        template_path = 'Tools/autotest/web/autotest-badge-template.svg'
-        with open(util.reltopdir(template_path), "r") as f:
-            template = f.read()
-
-        # Add our results to the template
-        badge = template.format(color=badge_color,
-                                text=badge_text,
-                                text_length=text_length)
-        with open(buildlogs_path("autotest-badge.svg"), "w") as f:
-            f.write(badge)
-
 
 def write_webresults(results_to_write):
     """Write webpage results."""
@@ -506,7 +472,6 @@ def write_webresults(results_to_write):
         f.close()
     for f in glob.glob(util.reltopdir('Tools/autotest/web/*.png')):
         shutil.copy(f, buildlogs_path(os.path.basename(f)))
-    results_to_write.generate_badge()
 
 
 def write_fullresults():
@@ -586,18 +551,13 @@ def run_tests(steps):
 
     passed = True
     failed = []
-    failed_testinstances = dict()
     for step in steps:
         util.pexpect_close_all()
 
         t1 = time.time()
         print(">>>> RUNNING STEP: %s at %s" % (step, time.asctime()))
         try:
-            success = run_step(step)
-            testinstance = None
-            if type(success) == tuple:
-                (success, testinstance) = success
-            if success:
+            if run_step(step):
                 results.add(step, '<span class="passed-text">PASSED</span>',
                             time.time() - t1)
                 print(">>>> PASSED STEP: %s at %s" % (step, time.asctime()))
@@ -606,10 +566,6 @@ def run_tests(steps):
                 print(">>>> FAILED STEP: %s at %s" % (step, time.asctime()))
                 passed = False
                 failed.append(step)
-                if testinstance is not None:
-                    if failed_testinstances.get(step) is None:
-                        failed_testinstances[step] = []
-                    failed_testinstances[step].append(testinstance)
                 results.add(step, '<span class="failed-text">FAILED</span>',
                             time.time() - t1)
         except Exception as msg:
@@ -623,16 +579,6 @@ def run_tests(steps):
                         time.time() - t1)
             check_logs(step)
     if not passed:
-        keys = failed_testinstances.keys()
-        if len(keys):
-            print("Failure Summary:")
-        for key in keys:
-            print("  %s:" % key)
-            for testinstance in failed_testinstances[key]:
-                for failure in testinstance.fail_list:
-                    (desc, exception, debug_filename) = failure
-                    print("    %s (%s) (see %s)" % (desc, exception, debug_filename))
-
         print("FAILED %u tests: %s" % (len(failed), failed))
 
     util.pexpect_close_all()
@@ -669,17 +615,13 @@ if __name__ == "__main__":
                       action='store_true',
                       help='enable experimental tests')
     parser.add_option("--timeout",
-                      default=3600,
+                      default=3000,
                       type='int',
                       help='maximum runtime in seconds')
     parser.add_option("--frame",
                       type='string',
                       default=None,
                       help='specify frame type')
-    parser.add_option("--show-test-timings",
-                      action="store_true",
-                      default=False,
-                      help="show how long each test took to run")
 
     group_build = optparse.OptionGroup(parser, "Build options")
     group_build.add_option("--no-configure",
@@ -735,6 +677,7 @@ if __name__ == "__main__":
         'prerequisites',
         'build.All',
         'build.Binaries',
+        # 'build.DevRelease',
         'build.Parameters',
 
         'build.unit_tests',
@@ -760,8 +703,6 @@ if __name__ == "__main__":
         'fly.CopterAVC',
 
         'build.AntennaTracker',
-        'defaults.AntennaTracker',
-        'test.AntennaTracker',
 
         'build.ArduSub',
         'defaults.ArduSub',
@@ -799,10 +740,6 @@ if __name__ == "__main__":
         for a in args:
             matches = [step for step in steps
                        if fnmatch.fnmatch(step.lower(), a.lower())]
-            x = find_specific_test_to_run(a)
-            if x is not None:
-                matches.append(x)
-
             if not len(matches):
                 print("No steps matched {}".format(a))
                 sys.exit(1)

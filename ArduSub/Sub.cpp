@@ -24,7 +24,7 @@ const AP_HAL::HAL& hal = AP_HAL::get_HAL();
   constructor for main Sub class
  */
 Sub::Sub()
-    : logger(g.log_bitmask),
+    : DataFlash(g.log_bitmask),
           control_mode(MANUAL),
           motors(MAIN_LOOP_RATE),
           scaleLongDown(1),
@@ -41,6 +41,8 @@ Sub::Sub()
           circle_nav(inertial_nav, ahrs_view, pos_control),
           param_loader(var_info)
 {
+    memset(&current_loc, 0, sizeof(current_loc));
+
     // init sensor error logging flags
     sensor_health.baro = true;
     sensor_health.compass = true;

@@ -22,7 +22,7 @@
 
 #include "AP_GPS.h"
 #include "AP_GPS_GSOF.h"
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 
 extern const AP_HAL::HAL& hal;
 

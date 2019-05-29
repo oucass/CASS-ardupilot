@@ -36,6 +36,7 @@ public:
                         AP_MotorsHeli& motors,
                         float dt) :
         AC_AttitudeControl(ahrs, aparm, motors, dt),
+        _passthrough_roll(0), _passthrough_pitch(0), _passthrough_yaw(0),
         _pid_rate_roll(AC_ATC_HELI_RATE_RP_P, AC_ATC_HELI_RATE_RP_I, AC_ATC_HELI_RATE_RP_D, AC_ATC_HELI_RATE_RP_IMAX, AC_ATC_HELI_RATE_RP_FILT_HZ, dt, AC_ATC_HELI_RATE_RP_FF),
         _pid_rate_pitch(AC_ATC_HELI_RATE_RP_P, AC_ATC_HELI_RATE_RP_I, AC_ATC_HELI_RATE_RP_D, AC_ATC_HELI_RATE_RP_IMAX, AC_ATC_HELI_RATE_RP_FILT_HZ, dt, AC_ATC_HELI_RATE_RP_FF),
         _pid_rate_yaw(AC_ATC_HELI_RATE_YAW_P, AC_ATC_HELI_RATE_YAW_I, AC_ATC_HELI_RATE_YAW_D, AC_ATC_HELI_RATE_YAW_IMAX, AC_ATC_HELI_RATE_YAW_FILT_HZ, dt, AC_ATC_HELI_RATE_YAW_FF),
@@ -135,11 +136,11 @@ private:
     //
     
     // pass through for roll and pitch
-    float _passthrough_roll;
-    float _passthrough_pitch;
+    int16_t _passthrough_roll;
+    int16_t _passthrough_pitch;
 
     // pass through for yaw if tail_passthrough is set
-    float _passthrough_yaw;
+    int16_t _passthrough_yaw;
 
     // get_roll_trim - angle in centi-degrees to be added to roll angle. Used by helicopter to counter tail rotor thrust in hover
     float get_roll_trim_rad() override { return constrain_float(radians(_hover_roll_trim_scalar * _hover_roll_trim * 0.01f), -radians(10.0f),radians(10.0f));}

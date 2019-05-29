@@ -15,13 +15,15 @@ unset CXX CC
 export BUILDROOT=/tmp/ci.build
 rm -rf $BUILDROOT
 export GIT_VERSION="ci_test"
+export NUTTX_GIT_VERSION="ci_test"
+export PX4_GIT_VERSION="ci_test"
 export CHIBIOS_GIT_VERSION="ci_test"
 export CCACHE_SLOPPINESS="include_file_ctime,include_file_mtime"
 autotest_args=""
 
 # If CI_BUILD_TARGET is not set, build 3 different ones
 if [ -z "$CI_BUILD_TARGET" ]; then
-    CI_BUILD_TARGET="sitl linux fmuv3"
+    CI_BUILD_TARGET="sitl linux px4-v2"
 fi
 
 declare -A waf_supported_boards
@@ -30,6 +32,10 @@ waf=modules/waf/waf-light
 
 # get list of boards supported by the waf build
 for board in $($waf list_boards | head -n1); do waf_supported_boards[$board]=1; done
+
+function get_time {
+    date -u "+%s"
+}
 
 echo "Targets: $CI_BUILD_TARGET"
 echo "Compiler: $c_compiler"
@@ -85,14 +91,6 @@ for t in $CI_BUILD_TARGET; do
         continue
     fi
 
-    if [ "$t" == "sitl-scripting" ]; then
-        echo "Building scripting"
-        $waf configure --enable-scripting
-        $waf clean
-        $waf all
-        continue
-    fi
-
     if [ "$t" == "revo-bootloader" ]; then
         echo "Building revo bootloader"
         $waf configure --board revo-mini --bootloader
@@ -101,30 +99,6 @@ for t in $CI_BUILD_TARGET; do
         continue
     fi
 
-    if [ "$t" == "stm32f7" ]; then
-        echo "Building mRoX21-777/"
-        $waf configure --board mRoX21-777
-        $waf clean
-        $waf plane
-        continue
-    fi
-
-    if [ "$t" == "stm32h7" ]; then
-        echo "Building Pixhawk6"
-        $waf configure --board Pixhawk6
-        $waf clean
-        $waf copter
-        continue
-    fi
-
-    if [ "$t" == "fmuv2-plane" ]; then
-        echo "Building fmuv2 plane"
-        $waf configure --board fmuv2
-        $waf clean
-        $waf plane
-        continue
-    fi
-    
     if [ "$t" == "iofirmware" ]; then
         echo "Building iofirmware"
         $waf configure --board iomcu
@@ -132,11 +106,34 @@ for t in $CI_BUILD_TARGET; do
         $waf iofirmware
         continue
     fi
-
-    if [ "$t" == "configure-all" ]; then
-        echo "Checking configure of all boards"
-        ./Tools/scripts/configure_all.py
+    
+    if [ "$t" == "revo-mini" ]; then
+        # save some time by only building one target for revo-mini
+        echo "Building revo-mini"
+        $waf configure --board revo-mini
+        $waf clean
+        $waf plane
         continue
+    fi
+    
+    # only do make-based builds for GCC, when target is PX4-v3 or build is launched by a scheduled job and target is a PX4 board or SITL
+    if [[ "$cxx_compiler" != "clang++" && ($t == "px4-v3" || (-n ${CI_CRON_JOB+1} && ($t == "px4"* || $t == "sitl"))) ]]; then
+        echo "Starting make based build for target ${t}..."
+        for v in "ArduPlane" "ArduCopter" "APMrover2" "ArduSub" "AntennaTracker"; do
+            echo "Building $v for ${t}..."
+
+            pushd $v
+            make clean
+            if [[ $t == "px4"* ]]; then
+                make px4-cleandep
+            fi
+
+            start_time=$(get_time)
+            make "$t" -j$(nproc)
+            diff_time=$(($(get_time)-$start_time))
+            echo -e "\033[32m'make' finished successfully (${diff_time}s)\033[0m"
+            popd
+        done
     fi
 
     if [[ -n ${waf_supported_boards[$t]} && -z ${CI_CRON_JOB+1} ]]; then

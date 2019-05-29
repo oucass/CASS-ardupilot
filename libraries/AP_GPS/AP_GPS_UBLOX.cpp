@@ -21,7 +21,7 @@
 #include "AP_GPS.h"
 #include "AP_GPS_UBLOX.h"
 #include <AP_HAL/Util.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include <GCS_MAVLink/GCS.h>
 
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIO || \
@@ -34,7 +34,6 @@
 
 #define UBLOX_DEBUGGING 0
 #define UBLOX_FAKE_3DLOCK 0
-#define CONFIGURE_PPS_PIN 0
 
 extern const AP_HAL::HAL& hal;
 
@@ -58,10 +57,6 @@ AP_GPS_UBLOX::AP_GPS_UBLOX(AP_GPS &_gps, AP_GPS::GPS_State &_state, AP_HAL::UART
 
     // start the process of updating the GPS rates
     _request_next_config();
-
-#if CONFIGURE_PPS_PIN
-    _unconfigured_messages |= CONFIG_TP5;
-#endif
 }
 
 void
@@ -78,18 +73,13 @@ AP_GPS_UBLOX::_request_next_config(void)
         return;
     }
 
-    Debug("Unconfigured messages: %u Current message: %u\n", (unsigned)_unconfigured_messages, (unsigned)_next_message);
+   Debug("Unconfigured messages: %d Current message: %d\n", _unconfigured_messages, _next_message);
 
-    // check AP_GPS_UBLOX.h for the enum that controls the order.
-    // This switch statement isn't maintained against the enum in order to reduce code churn
+   // check AP_GPS_UBLOX.h for the enum that controls the order.
+   // This switch statement isn't maintained against the enum in order to reduce code churn
     switch (_next_message++) {
     case STEP_PVT:
         if(!_request_message_rate(CLASS_NAV, MSG_PVT)) {
-            _next_message--;
-        }
-        break;
-    case STEP_TIMEGPS:
-        if(!_request_message_rate(CLASS_NAV, MSG_TIMEGPS)) {
             _next_message--;
         }
         break;
@@ -120,13 +110,6 @@ AP_GPS_UBLOX::_request_next_config(void)
         if (!_send_message(CLASS_CFG, MSG_CFG_GNSS, nullptr, 0)) {
             _next_message--;
         }
-        break;
-    case STEP_POLL_TP5:
-#if CONFIGURE_PPS_PIN
-        if (!_send_message(CLASS_CFG, MSG_CFG_TP5, nullptr, 0)) {
-            _next_message--;
-        }
-#endif
         break;
     case STEP_NAV_RATE:
         if (!_send_message(CLASS_CFG, MSG_CFG_RATE, nullptr, 0)) {
@@ -234,11 +217,10 @@ AP_GPS_UBLOX::_verify_rate(uint8_t msg_class, uint8_t msg_id, uint8_t rate) {
             }
             break;
         case MSG_SOL:
-            desired_rate = havePvtMsg ? 0 : RATE_SOL;
-            if(rate == desired_rate) {
+            if(rate == RATE_SOL) {
                 _unconfigured_messages &= ~CONFIG_RATE_SOL;
             } else {
-                _configure_message_rate(msg_class, msg_id, desired_rate);
+                _configure_message_rate(msg_class, msg_id, RATE_SOL);
                 _unconfigured_messages |= CONFIG_RATE_SOL;
                 _cfg_needs_save = true;
             }
@@ -249,15 +231,6 @@ AP_GPS_UBLOX::_verify_rate(uint8_t msg_class, uint8_t msg_id, uint8_t rate) {
             } else {
                 _configure_message_rate(msg_class, msg_id, RATE_PVT);
                 _unconfigured_messages |= CONFIG_RATE_PVT;
-                _cfg_needs_save = true;
-            }
-            break;
-        case MSG_TIMEGPS:
-            if(rate == RATE_TIMEGPS) {
-                _unconfigured_messages &= ~CONFIG_RATE_TIMEGPS;
-            } else {
-                _configure_message_rate(msg_class, msg_id, RATE_TIMEGPS);
-                _unconfigured_messages |= CONFIG_RATE_TIMEGPS;
                 _cfg_needs_save = true;
             }
             break;
@@ -341,8 +314,7 @@ AP_GPS_UBLOX::_request_port(void)
     }
     _send_message(CLASS_CFG, MSG_CFG_PRT, nullptr, 0);
 }
-
-// Ensure there is enough space for the largest possible outgoing message
+    // Ensure there is enough space for the largest possible outgoing message
 // Process bytes available from the stream
 //
 // The stream is assumed to contain only messages we recognise.  If it
@@ -428,7 +400,7 @@ AP_GPS_UBLOX::read(void)
         case 2:
             _step++;
             _class = data;
-            _ck_b = _ck_a = data;                       // reset the checksum accumulators
+            _ck_b = _ck_a = data;                               // reset the checksum accumulators
             break;
         case 3:
             _step++;
@@ -438,7 +410,7 @@ AP_GPS_UBLOX::read(void)
         case 4:
             _step++;
             _ck_b += (_ck_a += data);                   // checksum byte
-            _payload_length = data;                     // payload length low byte
+            _payload_length = data;                             // payload length low byte
             break;
         case 5:
             _step++;
@@ -452,7 +424,7 @@ AP_GPS_UBLOX::read(void)
                 _step = 0;
 				goto reset;
             }
-            _payload_counter = 0;                       // prepare to receive payload
+            _payload_counter = 0;                               // prepare to receive payload
             break;
 
         // Receive message data
@@ -495,7 +467,7 @@ AP_GPS_UBLOX::read(void)
 // Private Methods /////////////////////////////////////////////////////////////
 void AP_GPS_UBLOX::log_mon_hw(void)
 {
-    if (!should_log()) {
+    if (!should_df_log()) {
         return;
     }
     struct log_Ubx1 pkt = {
@@ -514,12 +486,12 @@ void AP_GPS_UBLOX::log_mon_hw(void)
         pkt.aPower     = _buffer.mon_hw_68.aPower;
         pkt.agcCnt     = _buffer.mon_hw_68.agcCnt;
     }
-    AP::logger().WriteBlock(&pkt, sizeof(pkt));
+    DataFlash_Class::instance()->WriteBlock(&pkt, sizeof(pkt));
 }
 
 void AP_GPS_UBLOX::log_mon_hw2(void)
 {
-    if (!should_log()) {
+    if (!should_df_log()) {
         return;
     }
 
@@ -532,13 +504,13 @@ void AP_GPS_UBLOX::log_mon_hw2(void)
         ofsQ      : _buffer.mon_hw2.ofsQ,
         magQ      : _buffer.mon_hw2.magQ,
     };
-    AP::logger().WriteBlock(&pkt, sizeof(pkt));
+    DataFlash_Class::instance()->WriteBlock(&pkt, sizeof(pkt));
 }
 
 #if UBLOX_RXM_RAW_LOGGING
 void AP_GPS_UBLOX::log_rxm_raw(const struct ubx_rxm_raw &raw)
 {
-    if (!should_log()) {
+    if (!should_df_log()) {
         return;
     }
 
@@ -558,13 +530,13 @@ void AP_GPS_UBLOX::log_rxm_raw(const struct ubx_rxm_raw &raw)
             cno        : raw.svinfo[i].cno,
             lli        : raw.svinfo[i].lli
         };
-        AP::logger().WriteBlock(&pkt, sizeof(pkt));
+        DataFlash_Class::instance()->WriteBlock(&pkt, sizeof(pkt));
     }
 }
 
 void AP_GPS_UBLOX::log_rxm_rawx(const struct ubx_rxm_rawx &raw)
 {
-    if (!should_log()) {
+    if (!should_df_log()) {
         return;
     }
 
@@ -579,7 +551,7 @@ void AP_GPS_UBLOX::log_rxm_rawx(const struct ubx_rxm_rawx &raw)
         numMeas    : raw.numMeas,
         recStat    : raw.recStat
     };
-    AP::logger().WriteBlock(&header, sizeof(header));
+    DataFlash_Class::instance()->WriteBlock(&header, sizeof(header));
 
     for (uint8_t i=0; i<raw.numMeas; i++) {
         struct log_GPS_RAWS pkt = {
@@ -598,7 +570,7 @@ void AP_GPS_UBLOX::log_rxm_rawx(const struct ubx_rxm_rawx &raw)
             doStdev    : raw.svinfo[i].doStdev,
             trkStat    : raw.svinfo[i].trkStat
         };
-        AP::logger().WriteBlock(&pkt, sizeof(pkt));
+        DataFlash_Class::instance()->WriteBlock(&pkt, sizeof(pkt));
     }
 }
 #endif // UBLOX_RXM_RAW_LOGGING
@@ -645,13 +617,10 @@ AP_GPS_UBLOX::_parse_gps(void)
                 case MSG_CFG_RATE:
                     // The GPS will ACK a update rate that is invalid. in order to detect this
                     // only accept the rate as configured by reading the settings back and
-                    // validating that they all match the target values
+                   //  validating that they all match the target values
                     break;
                 case MSG_CFG_SBAS:
                     _unconfigured_messages &= ~CONFIG_SBAS;
-                    break;
-                case MSG_CFG_TP5:
-                    _unconfigured_messages &= ~CONFIG_TP5;
                     break;
                 }
                 break;
@@ -810,40 +779,6 @@ AP_GPS_UBLOX::_parse_gps(void)
                 _unconfigured_messages &= ~CONFIG_RATE_NAV;
             }
             return false;
-            
-#if CONFIGURE_PPS_PIN
-        case MSG_CFG_TP5: {
-            // configure the PPS pin for 1Hz, zero delay
-            Debug("Got TP5 ver=%u 0x%04x %u\n", 
-                  (unsigned)_buffer.nav_tp5.version,
-                  (unsigned)_buffer.nav_tp5.flags,
-                  (unsigned)_buffer.nav_tp5.freqPeriod);
-            const uint16_t desired_flags = 0x003f;
-            const uint16_t desired_period_hz = 1;
-            if (_buffer.nav_tp5.flags != desired_flags ||
-                _buffer.nav_tp5.freqPeriod != desired_period_hz) {
-                _buffer.nav_tp5.tpIdx = 0;
-                _buffer.nav_tp5.reserved1[0] = 0;
-                _buffer.nav_tp5.reserved1[1] = 0;
-                _buffer.nav_tp5.antCableDelay = 0;
-                _buffer.nav_tp5.rfGroupDelay = 0;
-                _buffer.nav_tp5.freqPeriod = desired_period_hz;
-                _buffer.nav_tp5.freqPeriodLock = desired_period_hz;
-                _buffer.nav_tp5.pulseLenRatio = 1;
-                _buffer.nav_tp5.pulseLenRatioLock = 2;
-                _buffer.nav_tp5.userConfigDelay = 0;
-                _buffer.nav_tp5.flags = desired_flags;
-                _send_message(CLASS_CFG, MSG_CFG_TP5,
-                              &_buffer.nav_tp5,
-                              sizeof(_buffer.nav_tp5));
-                _unconfigured_messages |= CONFIG_TP5;
-                _cfg_needs_save = true;
-            } else {
-                _unconfigured_messages &= ~CONFIG_TP5;
-            }
-            return false;
-        }
-#endif // CONFIGURE_PPS_PIN
         }
            
     }
@@ -898,8 +833,7 @@ AP_GPS_UBLOX::_parse_gps(void)
             _unconfigured_messages |= CONFIG_RATE_POSLLH;
             break;
         }
-        _check_new_itow(_buffer.posllh.itow);
-        _last_pos_time        = _buffer.posllh.itow;
+        _last_pos_time        = _buffer.posllh.time;
         state.location.lng    = _buffer.posllh.longitude;
         state.location.lat    = _buffer.posllh.latitude;
         state.location.alt    = _buffer.posllh.altitude_msl / 10;
@@ -921,7 +855,6 @@ AP_GPS_UBLOX::_parse_gps(void)
         Debug("MSG_STATUS fix_status=%u fix_type=%u",
               _buffer.status.fix_status,
               _buffer.status.fix_type);
-        _check_new_itow(_buffer.status.itow);
         if (havePvtMsg) {
             _unconfigured_messages |= CONFIG_RATE_STATUS;
             break;
@@ -950,7 +883,6 @@ AP_GPS_UBLOX::_parse_gps(void)
     case MSG_DOP:
         Debug("MSG_DOP");
         noReceivedHdop = false;
-        _check_new_itow(_buffer.dop.itow);
         state.hdop        = _buffer.dop.hDOP;
         state.vdop        = _buffer.dop.vDOP;
 #if UBLOX_FAKE_3DLOCK
@@ -962,7 +894,6 @@ AP_GPS_UBLOX::_parse_gps(void)
         Debug("MSG_SOL fix_status=%u fix_type=%u",
               _buffer.solution.fix_status,
               _buffer.solution.fix_type);
-        _check_new_itow(_buffer.solution.itow);
         if (havePvtMsg) {
             state.time_week = _buffer.solution.week;
             break;
@@ -989,7 +920,7 @@ AP_GPS_UBLOX::_parse_gps(void)
         state.num_sats    = _buffer.solution.satellites;
         if (next_fix >= AP_GPS::GPS_OK_FIX_2D) {
             state.last_gps_time_ms = AP_HAL::millis();
-            state.time_week_ms    = _buffer.solution.itow;
+            state.time_week_ms    = _buffer.solution.time;
             state.time_week       = _buffer.solution.week;
         }
 #if UBLOX_FAKE_3DLOCK
@@ -1005,7 +936,6 @@ AP_GPS_UBLOX::_parse_gps(void)
         Debug("MSG_PVT");
         havePvtMsg = true;
         // position
-        _check_new_itow(_buffer.pvt.itow);
         _last_pos_time        = _buffer.pvt.itow;
         state.location.lng    = _buffer.pvt.lon;
         state.location.lat    = _buffer.pvt.lat;
@@ -1087,20 +1017,13 @@ AP_GPS_UBLOX::_parse_gps(void)
         next_fix = state.status;
 #endif
         break;
-    case MSG_TIMEGPS:
-        Debug("MSG_TIMEGPS");
-        _check_new_itow(_buffer.timegps.itow);
-        if (_buffer.timegps.valid & UBX_TIMEGPS_VALID_WEEK_MASK)
-            state.time_week = _buffer.timegps.week;
-        break;
     case MSG_VELNED:
         Debug("MSG_VELNED");
         if (havePvtMsg) {
             _unconfigured_messages |= CONFIG_RATE_VELNED;
             break;
         }
-        _check_new_itow(_buffer.velned.itow);
-        _last_vel_time         = _buffer.velned.itow;
+        _last_vel_time         = _buffer.velned.time;
         state.ground_speed     = _buffer.velned.speed_2d*0.01f;          // m/s
         state.ground_course    = wrap_360(_buffer.velned.heading_2d * 1.0e-5f);       // Heading 2D deg * 100000
         state.have_vertical_velocity = true;
@@ -1120,7 +1043,6 @@ AP_GPS_UBLOX::_parse_gps(void)
         {
         Debug("MSG_NAV_SVINFO\n");
         static const uint8_t HardwareGenerationMask = 0x07;
-        _check_new_itow(_buffer.svinfo_header.itow);
         _hardware_generation = _buffer.svinfo_header.globalFlags & HardwareGenerationMask;
         switch (_hardware_generation) {
             case UBLOX_5:
@@ -1356,11 +1278,8 @@ static const char *reasons[] = {"navigation rate",
                                 "navigation settings",
                                 "GNSS settings",
                                 "SBAS settings",
-                                "PVT rate",
-                                "time pulse settings",
-                                "TIMEGPS rate"};
+                                "PVT rate"};
 
-static_assert((1 << ARRAY_SIZE(reasons)) == CONFIG_LAST, "UBLOX: Missing configuration description");
 
 void
 AP_GPS_UBLOX::broadcast_configuration_failure_reason(void) const {
@@ -1399,20 +1318,14 @@ bool AP_GPS_UBLOX::get_lag(float &lag_sec) const
     return true;
 }
 
-void AP_GPS_UBLOX::Write_AP_Logger_Log_Startup_messages() const
+void AP_GPS_UBLOX::Write_DataFlash_Log_Startup_messages() const
 {
-    AP_GPS_Backend::Write_AP_Logger_Log_Startup_messages();
+    AP_GPS_Backend::Write_DataFlash_Log_Startup_messages();
 
     if (_have_version) {
-        AP::logger().Write_MessageF("u-blox %d HW: %s SW: %s",
+        DataFlash_Class::instance()->Log_Write_MessageF("u-blox %d HW: %s SW: %s",
                                            state.instance+1,
                                            _version.hwVersion,
                                            _version.swVersion);
     }
-}
-
-// uBlox specific check_new_itow(), handling message length
-void AP_GPS_UBLOX::_check_new_itow(uint32_t itow)
-{
-    check_new_itow(itow, _payload_length + sizeof(ubx_header) + 2);
 }

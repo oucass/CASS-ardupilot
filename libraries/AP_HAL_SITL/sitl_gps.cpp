@@ -411,6 +411,14 @@ void SITL_State::_update_gps_ubx(const struct gps_data *d, uint8_t instance)
     }
 }
 
+static void swap_uint32(uint32_t *v, uint8_t n)
+{
+    while (n--) {
+        *v = htonl(*v);
+        v++;
+    }
+}
+
 /*
   MTK type simple checksum
  */
@@ -450,11 +458,11 @@ void SITL_State::_update_gps_mtk(const struct gps_data *d, uint8_t instance)
     p.preamble2     = 0x62;
     p.msg_class     = 1;
     p.msg_id        = 5;
-    p.latitude      = htonl(d->latitude  * 1.0e6);
-    p.longitude     = htonl(d->longitude * 1.0e6);
-    p.altitude      = htonl(d->altitude * 100);
-    p.ground_speed  = htonl(norm(d->speedN, d->speedE) * 100);
-    p.ground_course = htonl(ToDeg(atan2f(d->speedE, d->speedN)) * 1000000.0f);
+    p.latitude      = d->latitude  * 1.0e6;
+    p.longitude     = d->longitude * 1.0e6;
+    p.altitude      = d->altitude * 100;
+    p.ground_speed  = norm(d->speedN, d->speedE) * 100;
+    p.ground_course = ToDeg(atan2f(d->speedE, d->speedN)) * 1000000.0f;
     if (p.ground_course < 0.0f) {
         p.ground_course += 360.0f * 1000000.0f;
     }
@@ -472,8 +480,10 @@ void SITL_State::_update_gps_mtk(const struct gps_data *d, uint8_t instance)
     tm = *gmtime(&tv.tv_sec);
     uint32_t hsec = (tv.tv_usec / (10000*20)) * 20; // always multiple of 20
 
-    p.utc_time = htonl(hsec + tm.tm_sec*100 + tm.tm_min*100*100 + tm.tm_hour*100*100*100);
+    p.utc_time = hsec + tm.tm_sec*100 + tm.tm_min*100*100 + tm.tm_hour*100*100*100;
 
+    swap_uint32((uint32_t *)&p.latitude, 5);
+    swap_uint32((uint32_t *)&p.utc_time, 1);
     mtk_checksum(&p.msg_class, sizeof(p)-4, &p.ck_a, &p.ck_b);
 
     _gps_write((uint8_t*)&p, sizeof(p), instance);
@@ -674,7 +684,7 @@ void SITL_State::_update_gps_nmea(const struct gps_data *d, uint8_t instance)
                      d->have_lock?_sitl->gps_numsats:3,
                      2.0,
                      d->altitude);
-    float speed_knots = norm(d->speedN, d->speedE) * M_PER_SEC_TO_KNOTS;
+    float speed_knots = norm(d->speedN, d->speedE)*1.94384449f;
     float heading = ToDeg(atan2f(d->speedE, d->speedN));
     if (heading < 0) {
         heading += 360.0f;
@@ -987,7 +997,7 @@ void SITL_State::_update_gps_nova(const struct gps_data *d, uint8_t instance)
         float cutoff;
         uint32_t svcount;
         // extra data for individual prns
-    } psrdop {};
+    } psrdop;
 
     struct PACKED bestpos
     {
@@ -1013,7 +1023,7 @@ void SITL_State::_update_gps_nova(const struct gps_data *d, uint8_t instance)
         uint8_t extsolstat;
         uint8_t galbeisigmask;
         uint8_t gpsglosigmask;
-    } bestpos {};
+    } bestpos;
 
     struct PACKED bestvel
     {
@@ -1026,7 +1036,7 @@ void SITL_State::_update_gps_nova(const struct gps_data *d, uint8_t instance)
         // + up
         double vertspd;
         float resv;
-    } bestvel {};
+    } bestvel;
     
     uint16_t time_week;
     uint32_t time_week_ms;

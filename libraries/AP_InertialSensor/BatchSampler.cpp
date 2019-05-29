@@ -1,6 +1,5 @@
 #include "AP_InertialSensor.h"
 #include <GCS_MAVLink/GCS.h>
-#include <AP_Logger/AP_Logger.h>
 
 // Class level parameters
 const AP_Param::GroupInfo AP_InertialSensor::BatchSampler::var_info[] = {
@@ -28,7 +27,7 @@ const AP_Param::GroupInfo AP_InertialSensor::BatchSampler::var_info[] = {
 
     // @Param: BAT_LGIN
     // @DisplayName: logging interval
-    // @Description: Interval between pushing samples to the AP_Logger log
+    // @Description: Interval between pushing samples to the DataFlash log
     // @Units: ms
     // @Increment: 10
     AP_GROUPINFO("BAT_LGIN", 4, AP_InertialSensor::BatchSampler, push_interval_ms,   20),
@@ -174,11 +173,11 @@ void AP_InertialSensor::BatchSampler::push_data_to_log()
         return;
     }
     if (AP_HAL::millis() - last_sent_ms < (uint16_t)push_interval_ms) {
-        // avoid flooding AP_Logger's buffer
+        // avoid flooding DataFlash's buffer
         return;
     }
-    AP_Logger *logger = AP_Logger::get_singleton();
-    if (logger == nullptr) {
+    DataFlash_Class *dataflash = DataFlash_Class::instance();
+    if (dataflash == nullptr) {
         // should not have been called
         return;
     }
@@ -200,7 +199,7 @@ void AP_InertialSensor::BatchSampler::push_data_to_log()
             }
             break;
         }
-        if (!logger->Write_ISBH(isb_seqnum,
+        if (!dataflash->Log_Write_ISBH(isb_seqnum,
                                        type,
                                        instance,
                                        multiplier,
@@ -213,7 +212,7 @@ void AP_InertialSensor::BatchSampler::push_data_to_log()
         isbh_sent = true;
     }
     // pack and send a data packet:
-    if (!logger->Write_ISBD(isb_seqnum,
+    if (!dataflash->Log_Write_ISBD(isb_seqnum,
                                    data_read_offset/samples_per_msg,
                                    &data_x[data_read_offset],
                                    &data_y[data_read_offset],
@@ -251,12 +250,12 @@ bool AP_InertialSensor::BatchSampler::should_log(uint8_t _instance, IMU_SENSOR_T
     if (data_write_offset >= _required_count) {
         return false;
     }
-    AP_Logger *logger = AP_Logger::get_singleton();
-    if (logger == nullptr) {
+    DataFlash_Class *dataflash = DataFlash_Class::instance();
+    if (dataflash == nullptr) {
         return false;
     }
 #define MASK_LOG_ANY                    0xFFFF
-    if (!logger->should_log(MASK_LOG_ANY)) {
+    if (!dataflash->should_log(MASK_LOG_ANY)) {
         return false;
     }
     return true;

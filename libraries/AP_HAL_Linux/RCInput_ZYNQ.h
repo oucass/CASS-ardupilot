@@ -11,8 +11,8 @@ namespace Linux {
 
 class RCInput_ZYNQ : public RCInput {
 public:
-    void init() override;
-    void _timer_tick(void) override;
+    void init();
+    void _timer_tick(void);
 
 private:
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_OCPOC_ZYNQ

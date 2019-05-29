@@ -26,8 +26,6 @@
 #include <stdio.h>
 #endif
 
-#include "lua_generated_bindings.h"
-
 #ifndef SCRIPTING_DIRECTORY
   #if HAL_OS_FATFS_IO
     #define SCRIPTING_DIRECTORY "/APM/scripts"
@@ -39,12 +37,10 @@
 extern const AP_HAL::HAL& hal;
 
 bool lua_scripts::overtime;
-jmp_buf lua_scripts::panic_jmp;
 
-lua_scripts::lua_scripts(const AP_Int32 &vm_steps, const AP_Int32 &heap_size, const AP_Int8 &debug_level)
-    : _vm_steps(vm_steps),
-      _debug_level(debug_level) {
-    _heap = hal.util->allocate_heap_memory(heap_size);
+lua_scripts::lua_scripts(const AP_Int32 &vm_steps)
+    : _vm_steps(vm_steps) {
+      scripts = nullptr;
 }
 
 void lua_scripts::hook(lua_State *L, lua_Debug *ar) {
@@ -57,13 +53,6 @@ void lua_scripts::hook(lua_State *L, lua_Debug *ar) {
     luaL_error(L, "Exceeded CPU time");
 }
 
-int lua_scripts::atpanic(lua_State *L) {
-    gcs().send_text(MAV_SEVERITY_CRITICAL, "Lua: Panic: %s", lua_tostring(L, -1));
-    hal.console->printf("Lua: Panic: %s\n", lua_tostring(L, -1));
-    longjmp(panic_jmp, 1);
-    return 0;
-}
-
 lua_scripts::script_info *lua_scripts::load_script(lua_State *L, char *filename) {
     if (int error = luaL_loadfile(L, filename)) {
         switch (error) {
@@ -73,17 +62,13 @@ lua_scripts::script_info *lua_scripts::load_script(lua_State *L, char *filename)
             case LUA_ERRMEM:
                 gcs().send_text(MAV_SEVERITY_CRITICAL, "Lua: Insufficent memory loading %s", filename);
                 return nullptr;
-            case LUA_ERRFILE:
-                gcs().send_text(MAV_SEVERITY_CRITICAL, "Lua: Unable to load the file: %s", lua_tostring(L, -1));
-                hal.console->printf("Lua: File error: %s\n", lua_tostring(L, -1));
-                return nullptr;
             default:
                 gcs().send_text(MAV_SEVERITY_CRITICAL, "Lua: Unknown error (%d) loading %s", error, filename);
                 return nullptr;
         }
     }
 
-    script_info *new_script = (script_info *)hal.util->heap_realloc(_heap, nullptr, sizeof(script_info));
+    script_info *new_script = (script_info *)luaM_malloc(L, sizeof(script_info));
     if (new_script == nullptr) {
         // No memory, shouldn't happen, we even attempted to do a GC
         gcs().send_text(MAV_SEVERITY_CRITICAL, "Lua: Insufficent memory loading %s", filename);
@@ -99,10 +84,8 @@ lua_scripts::script_info *lua_scripts::load_script(lua_State *L, char *filename)
     lua_getglobal(L, "get_sandbox_env");
     if (lua_pcall(L, 0, LUA_MULTRET, 0)) {
         gcs().send_text(MAV_SEVERITY_CRITICAL, "Scripting: Could not create sandbox: %s", lua_tostring(L, -1));
-        hal.console->printf("Lua: Scripting: Could not create sandbox: %s", lua_tostring(L, -1));
         return nullptr;
     }
-    load_generated_sandbox(L);
     lua_setupvalue(L, -2, 1);
 
     new_script->lua_ref = luaL_ref(L, LUA_REGISTRYINDEX);   // cache the reference
@@ -137,7 +120,7 @@ void lua_scripts::load_all_scripts_in_dir(lua_State *L, const char *dirname) {
 
         // FIXME: because chunk name fetching is not working we are allocating and storing an extra string we shouldn't need to
         size_t size = strlen(dirname) + strlen(de->d_name) + 2;
-        char * filename = (char *) hal.util->heap_realloc(_heap, nullptr, size);
+        char * filename = (char *)luaM_malloc(L, size);
         if (filename == nullptr) {
             continue;
         }
@@ -146,13 +129,12 @@ void lua_scripts::load_all_scripts_in_dir(lua_State *L, const char *dirname) {
         // we have something that looks like a lua file, attempt to load it
         script_info * script = load_script(L, filename);
         if (script == nullptr) {
-            hal.util->heap_realloc(_heap, filename, 0);
+            luaM_free(L, filename);
             continue;
         }
         reschedule_script(script);
 
     }
-    closedir(d);
 }
 
 void lua_scripts::run_next_script(lua_State *L) {
@@ -237,10 +219,6 @@ void lua_scripts::run_next_script(lua_State *L) {
 }
 
 void lua_scripts::remove_script(lua_State *L, script_info *script) {
-    if (script == nullptr) {
-        return;
-    }
-
     // ensure that the script isn't in the loaded list for any reason
     if (scripts == nullptr) {
         // nothing to do, already not in the list
@@ -255,12 +233,9 @@ void lua_scripts::remove_script(lua_State *L, script_info *script) {
         }
     }
 
-    if (L != nullptr) {
-        // state could be null if we are force killing all scripts
-        luaL_unref(L, LUA_REGISTRYINDEX, script->lua_ref);
-    }
-    hal.util->heap_realloc(_heap, script->name, 0);
-    hal.util->heap_realloc(_heap, script, 0);
+    luaL_unref(L, LUA_REGISTRYINDEX, script->lua_ref);
+    luaM_free(L, script->name);
+    luaM_free(L, script);
 }
 
 void lua_scripts::reschedule_script(script_info *script) {
@@ -298,39 +273,8 @@ void lua_scripts::reschedule_script(script_info *script) {
     previous->next = script;
 }
 
-void *lua_scripts::_heap;
-
-void *lua_scripts::alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
-    (void)ud; (void)osize;  /* not used */
-    return hal.util->heap_realloc(_heap, ptr, nsize);
-}
-
 void lua_scripts::run(void) {
-    if (_heap == nullptr) {
-        gcs().send_text(MAV_SEVERITY_INFO, "Lua: Unable to allocate a heap");
-        return;
-    }
-
-    // panic should be hooked first
-    if (setjmp(panic_jmp)) {
-        if (lua_state != nullptr) {
-            lua_close(lua_state); // shutdown the old state
-        }
-        // remove all the old scheduled scripts
-        for (script_info *script = scripts; script != nullptr; script = scripts) {
-            remove_script(nullptr, script);
-        }
-        scripts = nullptr;
-        overtime = false;
-    }
-
-    lua_state = lua_newstate(alloc, NULL);
-    lua_State *L = lua_state;
-    if (L == nullptr) {
-        gcs().send_text(MAV_SEVERITY_CRITICAL, "Lua: Couldn't allocate a lua state");
-        return;
-    }
-    lua_atpanic(L, atpanic);
+    lua_State *L = luaL_newstate();
     luaL_openlibs(L);
     load_lua_bindings(L);
 
@@ -352,12 +296,6 @@ void lua_scripts::run(void) {
     load_all_scripts_in_dir(L, SCRIPTING_DIRECTORY);
 
     while (true) {
-#if defined(AP_SCRIPTING_CHECKS) && AP_SCRIPTING_CHECKS >= 1
-        if (lua_gettop(L) != 0) {
-            AP_HAL::panic("Lua: Stack should be empty before running scripts");
-        }
-#endif // defined(AP_SCRIPTING_CHECKS) && AP_SCRIPTING_CHECKS >= 1
-
         if (scripts != nullptr) {
 #if defined(AP_SCRIPTING_CHECKS) && AP_SCRIPTING_CHECKS >= 1
               // Sanity check that the scripts list is ordered correctly
@@ -376,24 +314,20 @@ void lua_scripts::run(void) {
                 hal.scheduler->delay(scripts->next_run_ms - now_ms);
             }
 
-            if (_debug_level > 1) {
-                gcs().send_text(MAV_SEVERITY_DEBUG, "Lua: Running %s", scripts->name);
-            }
+            gcs().send_text(MAV_SEVERITY_DEBUG, "Lua: Running %s", scripts->name);
 
-            const uint32_t startMem = lua_gc(L, LUA_GCCOUNT, 0) * 1024 + lua_gc(L, LUA_GCCOUNTB, 0);
+            const uint32_t startMem = hal.util->available_memory();
             const uint32_t loadEnd = AP_HAL::micros();
 
             run_next_script(L);
 
             const uint32_t runEnd = AP_HAL::micros();
-            const uint32_t endMem = lua_gc(L, LUA_GCCOUNT, 0) * 1024 + lua_gc(L, LUA_GCCOUNTB, 0);
-            if (_debug_level > 1) {
-                gcs().send_text(MAV_SEVERITY_DEBUG, "Lua: Time: %d Mem: %d", runEnd - loadEnd, endMem - startMem);
-            }
+            const uint32_t endMem = hal.util->available_memory();
+            gcs().send_text(MAV_SEVERITY_DEBUG, "Lua: Time: %d Mem: %d", runEnd - loadEnd, startMem - endMem);
 
         } else {
             gcs().send_text(MAV_SEVERITY_DEBUG, "Lua: No scripts to run");
-            hal.scheduler->delay(10000);
+            hal.scheduler->delay(100);
         }
 
     }

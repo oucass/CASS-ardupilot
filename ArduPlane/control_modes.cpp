@@ -1,79 +1,5 @@
 #include "Plane.h"
 
-Mode *Plane::mode_from_mode_num(const enum Mode::Number num)
-{
-    Mode *ret = nullptr;
-    switch (num) {
-    case Mode::Number::MANUAL:
-        ret = &mode_manual;
-        break;
-    case Mode::Number::CIRCLE:
-        ret = &mode_circle;
-        break;
-    case Mode::Number::STABILIZE:
-        ret = &mode_stabilize;
-        break;
-    case Mode::Number::TRAINING:
-        ret = &mode_training;
-        break;
-    case Mode::Number::ACRO:
-        ret = &mode_acro;
-        break;
-    case Mode::Number::FLY_BY_WIRE_A:
-        ret = &mode_fbwa;
-        break;
-    case Mode::Number::FLY_BY_WIRE_B:
-        ret = &mode_fbwb;
-        break;
-    case Mode::Number::CRUISE:
-        ret = &mode_cruise;
-        break;
-    case Mode::Number::AUTOTUNE:
-        ret = &mode_autotune;
-        break;
-    case Mode::Number::AUTO:
-        ret = &mode_auto;
-        break;
-    case Mode::Number::RTL:
-        ret = &mode_rtl;
-        break;
-    case Mode::Number::LOITER:
-        ret = &mode_loiter;
-        break;
-    case Mode::Number::AVOID_ADSB:
-        ret = &mode_avoidADSB;
-        break;
-    case Mode::Number::GUIDED:
-        ret = &mode_guided;
-        break;
-    case Mode::Number::INITIALISING:
-        ret = &mode_initializing;
-        break;
-    case Mode::Number::QSTABILIZE:
-        ret = &mode_qstabilize;
-        break;
-    case Mode::Number::QHOVER:
-        ret = &mode_qhover;
-        break;
-    case Mode::Number::QLOITER:
-        ret = &mode_qloiter;
-        break;
-    case Mode::Number::QLAND:
-        ret = &mode_qland;
-        break;
-    case Mode::Number::QRTL:
-        ret = &mode_qrtl;
-        break;
-    case Mode::Number::QACRO:
-        ret = &mode_qacro;
-        break;
-    case Mode::Number::QAUTOTUNE:
-        ret = &mode_qautotune;
-        break;
-    }
-    return ret;
-}
-
 void Plane::read_control_switch()
 {
     static bool switch_debouncer;
@@ -113,7 +39,7 @@ void Plane::read_control_switch()
             return;
         }
 
-        set_mode_by_number((enum Mode::Number)flight_modes[switchPosition].get(), MODE_REASON_TX_COMMAND);
+        set_mode((enum FlightMode)(flight_modes[switchPosition].get()), MODE_REASON_TX_COMMAND);
 
         oldSwitchPosition = switchPosition;
     }
@@ -133,6 +59,37 @@ void Plane::read_control_switch()
         }
     }
 #endif
+    
+#if HAVE_PX4_MIXER
+    if (g.override_channel > 0) {
+        // if the user has configured an override channel then check it
+        bool override_requested = (RC_Channels::get_radio_in(g.override_channel-1) >= PX4IO_OVERRIDE_PWM);
+        if (override_requested && !px4io_override_enabled) {
+            if (hal.util->get_soft_armed() || (last_mixer_crc != -1)) {
+                px4io_override_enabled = true;
+                // disable output channels to force PX4IO override
+                gcs().send_text(MAV_SEVERITY_WARNING, "PX4IO override enabled");
+            } else {
+                // we'll let the one second loop reconfigure the mixer. The
+                // PX4IO code sometimes rejects a mixer, probably due to it
+                // being busy in some way?
+                gcs().send_text(MAV_SEVERITY_WARNING, "PX4IO override enable failed");
+            }
+        } else if (!override_requested && px4io_override_enabled) {
+            px4io_override_enabled = false;
+            SRV_Channels::enable_aux_servos();
+            gcs().send_text(MAV_SEVERITY_WARNING, "PX4IO override disabled");
+        }
+        if (px4io_override_enabled && 
+            hal.util->safety_switch_state() != AP_HAL::Util::SAFETY_ARMED &&
+            g.override_safety == 1) {
+            // we force safety off, so that if this override is used
+            // with a in-flight reboot it gives a way for the pilot to
+            // re-arm and take manual control
+            hal.rcout->force_safety_off();
+        }
+    }
+#endif // HAVE_PX4_MIXER
 }
 
 uint8_t Plane::readSwitch(void)
@@ -188,14 +145,14 @@ void Plane::autotune_enable(bool enable)
  */
 bool Plane::fly_inverted(void)
 {
-    if (control_mode == &plane.mode_manual) {
+    if (control_mode == MANUAL) {
         return false;
     }
     if (inverted_flight) {
         // controlled with aux switch
         return true;
     }
-    if (control_mode == &mode_auto && auto_state.inverted_flight) {
+    if (control_mode == AUTO && auto_state.inverted_flight) {
         return true;
     }
     return false;

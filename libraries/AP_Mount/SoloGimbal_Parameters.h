@@ -2,7 +2,7 @@
 #include <AP_Math/AP_Math.h>
 #include <AP_Common/AP_Common.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 
 enum gmb_param_state_t {
     GMB_PARAMSTATE_NOT_YET_READ=0, // parameter has yet to be initialized
@@ -84,7 +84,6 @@ private:
     } _params[MAVLINK_GIMBAL_NUM_TRACKED_PARAMS];
 
     uint32_t _last_request_ms;
-    uint32_t _last_set_ms;
     gmb_flashing_step_t _flashing_step;
 
     mavlink_channel_t _chan;

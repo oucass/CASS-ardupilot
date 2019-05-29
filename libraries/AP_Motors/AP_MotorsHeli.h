@@ -129,9 +129,6 @@ public:
 
     float get_throttle_hover() const override { return 0.5f; }
 
-    // support passing init_targets_on_arming flag to greater code
-    bool init_targets_on_arming() const { return _heliflags.init_targets_on_arming; }
-
     // var_info for holding Parameter information
     static const struct AP_Param::GroupInfo var_info[];
 
@@ -155,12 +152,6 @@ protected:
     // update_motor_controls - sends commands to motor controllers
     virtual void update_motor_control(RotorControlState state) = 0;
 
-    // run spool logic
-    void                output_logic();
-
-    // output_to_motors - sends commands to the motors
-    virtual void        output_to_motors() = 0;
-
     // reset_flight_controls - resets all controls and scalars to flight status
     void reset_flight_controls();
 
@@ -182,6 +173,9 @@ protected:
     // calculate_scalars - must be implemented by child classes
     virtual void calculate_scalars() = 0;
 
+    // calculate_roll_pitch_collective_factors - calculate factors based on swash type and servo position
+    virtual void calculate_roll_pitch_collective_factors() = 0;
+
     // servo_test - move servos through full range of movement
     // to be overloaded by child classes, different vehicle types would have different movement patterns
     virtual void servo_test() = 0;
@@ -194,7 +188,6 @@ protected:
         uint8_t landing_collective      : 1;    // true if collective is setup for landing which has much higher minimum
         uint8_t rotor_runup_complete    : 1;    // true if the rotors have had enough time to wind up
         uint8_t inverted_flight         : 1;    // true for inverted flight
-        uint8_t init_targets_on_arming  : 1;    // 0 if targets were initialized, 1 if targets were not initialized after arming
     } _heliflags;
 
     // parameters

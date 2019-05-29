@@ -18,7 +18,6 @@
 #include <AP_Param/AP_Param.h>
 #include <AP_Navigation/AP_Navigation.h>
 #include <AP_SpdHgtControl/AP_SpdHgtControl.h>
-#include <AP_Common/Location.h>
 
 class AP_L1_Control : public AP_Navigation {
 public:
@@ -35,44 +34,44 @@ public:
 
     /* see AP_Navigation.h for the definitions and units of these
      * functions */
-    int32_t nav_roll_cd(void) const override;
-    float lateral_acceleration(void) const override;
+    int32_t nav_roll_cd(void) const;
+    float lateral_acceleration(void) const;
 
     // return the desired track heading angle(centi-degrees)
-    int32_t nav_bearing_cd(void) const override;
+    int32_t nav_bearing_cd(void) const;
 
     // return the heading error angle (centi-degrees) +ve to left of track
-    int32_t bearing_error_cd(void) const override;
+    int32_t bearing_error_cd(void) const;
 
-    float crosstrack_error(void) const override { return _crosstrack_error; }
-    float crosstrack_error_integrator(void) const override { return _L1_xtrack_i; }
+    float crosstrack_error(void) const { return _crosstrack_error; }
+    float crosstrack_error_integrator(void) const { return _L1_xtrack_i; }
 
-    int32_t target_bearing_cd(void) const override;
-    float turn_distance(float wp_radius) const override;
-    float turn_distance(float wp_radius, float turn_angle) const override;
-    float loiter_radius (const float loiter_radius) const override;
-    void update_waypoint(const struct Location &prev_WP, const struct Location &next_WP, float dist_min = 0.0f) override;
-    void update_loiter(const struct Location &center_WP, float radius, int8_t loiter_direction) override;
-    void update_heading_hold(int32_t navigation_heading_cd) override;
-    void update_level_flight(void) override;
-    bool reached_loiter_target(void) override;
+    int32_t target_bearing_cd(void) const;
+    float turn_distance(float wp_radius) const;
+    float turn_distance(float wp_radius, float turn_angle) const;
+    float loiter_radius (const float loiter_radius) const;
+    void update_waypoint(const struct Location &prev_WP, const struct Location &next_WP, float dist_min = 0.0f);
+    void update_loiter(const struct Location &center_WP, float radius, int8_t loiter_direction);
+    void update_heading_hold(int32_t navigation_heading_cd);
+    void update_level_flight(void);
+    bool reached_loiter_target(void);
 
     // set the default NAVL1_PERIOD
     void set_default_period(float period) {
         _L1_period.set_default(period);
     }
 
-    void set_data_is_stale(void) override {
+    void set_data_is_stale(void)  {
         _data_is_stale = true;
     }
-    bool data_is_stale(void) const override {
+    bool data_is_stale(void) const {
         return _data_is_stale;
     }
 
     // this supports the NAVl1_* user settable parameters
     static const struct AP_Param::GroupInfo var_info[];
 
-    void set_reverse(bool reverse) override {
+    void set_reverse(bool reverse) {
         _reverse = reverse;
     }
 

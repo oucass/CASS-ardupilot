@@ -25,10 +25,9 @@ extern const AP_HAL::HAL& hal;
 // Note this is called after detect() returns true, so we
 // already know that we should setup the rangefinder
 AP_RangeFinder_NMEA::AP_RangeFinder_NMEA(RangeFinder::RangeFinder_State &_state,
-                                         AP_RangeFinder_Params &_params,
                                          AP_SerialManager &serial_manager,
                                          uint8_t serial_instance) :
-    AP_RangeFinder_Backend(_state, _params),
+    AP_RangeFinder_Backend(_state),
     _distance_m(-1.0f)
 {
     uart = serial_manager.find_serial(AP_SerialManager::SerialProtocol_Rangefinder, serial_instance);

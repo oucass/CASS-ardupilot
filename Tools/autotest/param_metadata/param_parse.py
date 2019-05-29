@@ -4,7 +4,7 @@ import glob
 import os
 import re
 import sys
-from argparse import ArgumentParser
+from optparse import OptionParser
 
 from param import (Library, Parameter, Vehicle, known_group_fields,
                    known_param_fields, required_param_fields, known_units)
@@ -14,21 +14,15 @@ from wikiemit import WikiEmit
 from xmlemit import XmlEmit
 from mdemit import MDEmit
 
-parser = ArgumentParser(description="Parse ArduPilot parameters.")
-parser.add_argument("-v", "--verbose", dest='verbose', action='store_true', default=False, help="show debugging output")
-parser.add_argument("--vehicle", required=True, help="Vehicle type to generate for")
-parser.add_argument("--no-emit",
-                    dest='emit_params',
-                    action='store_false',
-                    default=True,
-                    help="don't emit parameter documention, just validate")
-parser.add_argument("--format",
-                    dest='output_format',
-                    action='store',
-                    default='all',
-                    choices=['all', 'html', 'rst', 'wiki', 'xml', 'edn', 'md'],
-                    help="what output format to use")
-args = parser.parse_args()
+parser = OptionParser("param_parse.py [options]")
+parser.add_option("-v", "--verbose", dest='verbose', action='store_true', default=False, help="show debugging output")
+parser.add_option("--vehicle", default='*', help="Vehicle type to generate for")
+parser.add_option("--no-emit",
+                  dest='emit_params',
+                  action='store_false',
+                  default=True,
+                  help="don't emit parameter documention, just validate")
+(opts, args) = parser.parse_args()
 
 
 # Regular expressions for parsing the parameter metadata
@@ -43,10 +37,10 @@ prog_param_tagged_fields = re.compile(r"[ \t]*// @(\w+){([^}]+)}: (.*)")
 prog_groups = re.compile(r"@Group: *(\w+).*((?:\n[ \t]*// @(Path): (\S+))+)", re.MULTILINE)
 
 apm_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../')
-vehicle_paths = glob.glob(apm_path + "%s/Parameters.cpp" % args.vehicle)
+vehicle_paths = glob.glob(apm_path + "%s/Parameters.cpp" % opts.vehicle)
 extension = 'cpp'
 if len(vehicle_paths) == 0:
-    vehicle_paths = glob.glob(apm_path + "%s/Parameters.pde" % args.vehicle)
+    vehicle_paths = glob.glob(apm_path + "%s/Parameters.pde" % opts.vehicle)
     extension = 'pde'
 vehicle_paths.sort(reverse=True)
 
@@ -60,7 +54,7 @@ current_file = None
 
 def debug(str_to_print):
     """Debug output if verbose is set."""
-    if args.verbose:
+    if opts.verbose:
         print(str_to_print)
 
 
@@ -324,38 +318,22 @@ for library in libraries:
 def do_emit(emit):
     emit.set_annotate_with_vehicle(len(vehicles) > 1)
     for vehicle in vehicles:
-        emit.emit(vehicle)
+        emit.emit(vehicle, f)
 
     emit.start_libraries()
 
     for library in libraries:
         if library.params:
-            emit.emit(library)
+            emit.emit(library, f)
 
     emit.close()
 
 
-if args.emit_params:
-    if args.output_format == 'all' or args.output_format == 'xml':
-        do_emit(XmlEmit())
-    if args.output_format == 'all' or args.output_format == 'wiki':
-        do_emit(WikiEmit())
-    if args.output_format == 'all' or args.output_format == 'html':
-        do_emit(HtmlEmit())
-    if args.output_format == 'all' or args.output_format == 'rst':
-        do_emit(RSTEmit())
-    if args.output_format == 'all' or args.output_format == 'md':
-        do_emit(MDEmit())
-    if args.output_format == 'all' or args.output_format == 'edn':
-        try:
-            from ednemit import EDNEmit
-            do_emit(EDNEmit())
-        except ImportError:
-            # if the user wanted edn only then don't hide any errors
-            if args.output_format == 'edn':
-                raise
-
-            if args.verbose:
-                print("Unable to emit EDN, install edn_format and pytz if edn is desired")
+if opts.emit_params:
+    do_emit(XmlEmit())
+    do_emit(WikiEmit())
+    do_emit(HtmlEmit())
+    do_emit(RSTEmit())
+    do_emit(MDEmit())
 
 sys.exit(error_count)

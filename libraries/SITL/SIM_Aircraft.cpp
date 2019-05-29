@@ -29,7 +29,7 @@
 #include <mmsystem.h>
 #endif
 
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include <AP_Param/AP_Param.h>
 
 using namespace SITL;
@@ -125,10 +125,10 @@ bool Aircraft::parse_home(const char *home_str, Location &loc, float &yaw_degree
         return false;
     }
 
-    loc = {};
-    loc.lat = static_cast<int32_t>(strtod(lat_s, nullptr) * 1.0e7);
-    loc.lng = static_cast<int32_t>(strtod(lon_s, nullptr) * 1.0e7);
-    loc.alt = static_cast<int32_t>(strtod(alt_s, nullptr) * 1.0e2);
+    memset(&loc, 0, sizeof(loc));
+    loc.lat = static_cast<int32_t>(strtof(lat_s, nullptr) * 1.0e7f);
+    loc.lng = static_cast<int32_t>(strtof(lon_s, nullptr) * 1.0e7f);
+    loc.alt = static_cast<int32_t>(strtof(alt_s, nullptr) * 1.0e2f);
 
     if (loc.lat == 0 && loc.lng == 0) {
         // default to CMAC instead of middle of the ocean. This makes
@@ -159,11 +159,6 @@ float Aircraft::ground_height_difference() const
     return 0.0f;
 }
 
-void Aircraft::set_precland(SIM_Precland *_precland) {
-    precland = _precland;
-    precland->set_default_location(home.lat * 1.0e-7f, home.lng * 1.0e-7f, static_cast<int16_t>(get_home_yaw()));
-}
-
 /*
    return current height above ground level (metres)
 */
@@ -185,14 +180,14 @@ bool Aircraft::on_ground() const
 void Aircraft::update_position(void)
 {
     location = home;
-    location.offset(position.x, position.y);
+    location_offset(location, position.x, position.y);
 
     location.alt  = static_cast<int32_t>(home.alt - position.z * 100.0f);
 
 #if 0
     // logging of raw sitl data
     Vector3f accel_ef = dcm * accel_body;
-    AP::logger().Write("SITL", "TimeUS,VN,VE,VD,AN,AE,AD,PN,PE,PD", "Qfffffffff",
+    DataFlash_Class::instance()->Log_Write("SITL", "TimeUS,VN,VE,VD,AN,AE,AD,PN,PE,PD", "Qfffffffff",
                                            AP_HAL::micros64(),
                                            velocity_ef.x, velocity_ef.y, velocity_ef.z,
                                            accel_ef.x, accel_ef.y, accel_ef.z,
@@ -398,10 +393,6 @@ void Aircraft::fill_fdm(struct sitl_fdm &fdm)
     fdm.range = range;
     memcpy(fdm.rcin, rcin, rcin_chan_count * sizeof(float));
     fdm.bodyMagField = mag_bf;
-
-    // copy laser scanner results
-    fdm.scanner.points = scanner.points;
-    fdm.scanner.ranges = scanner.ranges;
 
     if (smoothing.enabled) {
         fdm.xAccel = smoothing.accel_body.x;
@@ -667,7 +658,7 @@ void Aircraft::smooth_sensors(void)
     dcm.to_euler(&R2, &P2, &Y2);
 
 #if 0
-    AP::logger().Write("SMOO", "TimeUS,AEx,AEy,AEz,DPx,DPy,DPz,R,P,Y,R2,P2,Y2",
+    DataFlash_Class::instance()->Log_Write("SMOO", "TimeUS,AEx,AEy,AEz,DPx,DPy,DPz,R,P,Y,R2,P2,Y2",
                                            "Qffffffffffff",
                                            AP_HAL::micros64(),
                                            degrees(angle_differential.x),
@@ -688,7 +679,7 @@ void Aircraft::smooth_sensors(void)
     smoothing.position += smoothing.velocity_ef * delta_time;
 
     smoothing.location = home;
-    smoothing.location.offset(smoothing.position.x, smoothing.position.y);
+    location_offset(smoothing.location, smoothing.position.x, smoothing.position.y);
     smoothing.location.alt  = static_cast<int32_t>(home.alt - smoothing.position.z * 100.0f);
 
     smoothing.last_update_us = now;
@@ -769,67 +760,5 @@ void Aircraft::update_external_payload(const struct sitl_input &input)
     if (gripper_epm && gripper_epm->is_enabled()) {
         gripper_epm->update(input);
         external_payload_mass += gripper_epm->payload_mass();
-    }
-
-    // update parachute
-    if (parachute && parachute->is_enabled()) {
-        parachute->update(input);
-        // TODO: add drag to vehicle, presumably proportional to velocity
-    }
-
-    if (precland && precland->is_enabled()) {
-        precland->update(get_location(), get_position());
-    }
-}
-
-void Aircraft::add_shove_forces(Vector3f &rot_accel, Vector3f &body_accel)
-{
-    const uint32_t now = AP_HAL::millis();
-    if (sitl == nullptr) {
-        return;
-    }
-    if (sitl->shove.t == 0) {
-        return;
-    }
-    if (sitl->shove.start_ms == 0) {
-        sitl->shove.start_ms = now;
-    }
-    if (now - sitl->shove.start_ms < uint32_t(sitl->shove.t)) {
-        // FIXME: can we get a vector operation here instead?
-        body_accel.x += sitl->shove.x;
-        body_accel.y += sitl->shove.y;
-        body_accel.z += sitl->shove.z;
-    } else {
-        sitl->shove.start_ms = 0;
-        sitl->shove.t = 0;
-    }
-}
-
-void Aircraft::add_twist_forces(Vector3f &rot_accel)
-{
-    if (sitl == nullptr) {
-        return;
-    }
-    if (sitl->gnd_behav != -1) {
-        ground_behavior = (GroundBehaviour)sitl->gnd_behav.get();
-    }
-    const uint32_t now = AP_HAL::millis();
-    if (sitl == nullptr) {
-        return;
-    }
-    if (sitl->twist.t == 0) {
-        return;
-    }
-    if (sitl->twist.start_ms == 0) {
-        sitl->twist.start_ms = now;
-    }
-    if (now - sitl->twist.start_ms < uint32_t(sitl->twist.t)) {
-        // FIXME: can we get a vector operation here instead?
-        rot_accel.x += sitl->twist.x;
-        rot_accel.y += sitl->twist.y;
-        rot_accel.z += sitl->twist.z;
-    } else {
-        sitl->twist.start_ms = 0;
-        sitl->twist.t = 0;
     }
 }

@@ -32,7 +32,7 @@ public:
     virtual void update() = 0;
 
     int8_t get_pin(void) const {
-        if (state.instance >= RPM_MAX_INSTANCES) {
+        if (state.instance > 1) {
             return -1;
         }
         return ap_rpm._pin[state.instance].get();

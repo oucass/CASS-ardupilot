@@ -156,6 +156,8 @@ AP_AdvancedFailsafe::check(uint32_t last_heartbeat_ms, bool geofence_breached, u
     if (!_enable) {
         return;
     }
+    // only set the termination capability, clearing it can mess up copter and sub which can always be terminated
+    hal.util->set_capabilities(MAV_PROTOCOL_CAPABILITY_FLIGHT_TERMINATION);
 
     // we always check for fence breach
     if(_enable_geofence_fs) {

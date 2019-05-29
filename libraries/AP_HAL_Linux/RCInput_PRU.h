@@ -14,8 +14,8 @@ namespace Linux {
 
 class RCInput_PRU : public RCInput {
 public:
-    void init() override;
-    void _timer_tick(void) override;
+    void init();
+    void _timer_tick(void);
 
  private:
     static const unsigned int NUM_RING_ENTRIES=300;

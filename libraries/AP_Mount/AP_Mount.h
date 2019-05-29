@@ -21,9 +21,12 @@
 
 #include <AP_Math/AP_Math.h>
 #include <AP_Common/AP_Common.h>
-#include <AP_Common/Location.h>
+#include <AP_GPS/AP_GPS.h>
+#include <AP_AHRS/AP_AHRS.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
+#include <RC_Channel/RC_Channel.h>
 #include <AP_SerialManager/AP_SerialManager.h>
+#include <DataFlash/DataFlash.h>
 
 // maximum number of mounts
 #define AP_MOUNT_MAX_INSTANCES          1

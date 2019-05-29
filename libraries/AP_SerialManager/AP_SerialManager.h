@@ -21,9 +21,10 @@
  */
 #pragma once
 
+#include <AP_Math/AP_Math.h>
+#include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
-#include <AP_Param/AP_Param.h>
 
 // we have hal.uartA to hal.uartG
 #define SERIALMANAGER_NUM_PORTS 7
@@ -67,9 +68,6 @@
 #define AP_SERIALMANAGER_VOLZ_BUFSIZE_RX     128
 #define AP_SERIALMANAGER_VOLZ_BUFSIZE_TX     128
 
-#define AP_SERIALMANAGER_ROBOTIS_BUFSIZE_RX  128
-#define AP_SERIALMANAGER_ROBOTIS_BUFSIZE_TX  128
-
 // SBUS servo outputs
 #define AP_SERIALMANAGER_SBUS1_BAUD           100000
 #define AP_SERIALMANAGER_SBUS1_BUFSIZE_RX     16
@@ -103,14 +101,11 @@ public:
         SerialProtocol_Sbus1 = 15,
         SerialProtocol_ESCTelemetry = 16,
         SerialProtocol_Devo_Telem = 17,
-        SerialProtocol_OpticalFlow = 18,
-        SerialProtocol_Robotis = 19,
-        SerialProtocol_NMEAOutput = 20,
     };
 
     // get singleton instance
-    static AP_SerialManager *get_singleton(void) {
-        return _singleton;
+    static AP_SerialManager *get_instance(void) {
+        return _instance;
     }
     
     // init_console - initialise console at default baud rate
@@ -141,20 +136,11 @@ public:
     // set_blocking_writes_all - sets block_writes on or off for all serial channels
     void set_blocking_writes_all(bool blocking);
 
-    // get the passthru ports if enabled
-    bool get_passthru(AP_HAL::UARTDriver *&port1, AP_HAL::UARTDriver *&port2, uint8_t &timeout_s) const;
-
-    // disable passthru by settings SERIAL_PASS2 to -1
-    void disable_passthru(void);
-
-    // get Serial Port
-    AP_HAL::UARTDriver *get_serial_by_id(uint8_t id);
-
     // parameter var table
     static const struct AP_Param::GroupInfo var_info[];
 
 private:
-    static AP_SerialManager *_singleton;
+    static AP_SerialManager *_instance;
     
     // array of uart info
     struct UARTState {
@@ -163,11 +149,6 @@ private:
         AP_HAL::UARTDriver* uart;
         AP_Int16 options;
     } state[SERIALMANAGER_NUM_PORTS];
-
-    // pass-through serial support
-    AP_Int8 passthru_port1;
-    AP_Int8 passthru_port2;
-    AP_Int8 passthru_timeout;
 
     // search through managed serial connections looking for the
     // instance-nth UART which is running protocol protocol

@@ -47,14 +47,11 @@
 #define UBLOX_MAX_GNSS_CONFIG_BLOCKS 7
 #define UBX_MSG_TYPES 2
 
-#define UBX_TIMEGPS_VALID_WEEK_MASK 0x2
-
 #define UBLOX_MAX_PORTS 6
 
 #define RATE_POSLLH 1
 #define RATE_STATUS 1
 #define RATE_SOL 1
-#define RATE_TIMEGPS 5
 #define RATE_PVT 1
 #define RATE_VELNED 1
 #define RATE_DOP 1
@@ -75,9 +72,6 @@
 #define CONFIG_GNSS          (1<<11)
 #define CONFIG_SBAS          (1<<12)
 #define CONFIG_RATE_PVT      (1<<13)
-#define CONFIG_TP5           (1<<14)
-#define CONFIG_RATE_TIMEGPS  (1<<15)
-#define CONFIG_LAST          (1<<16) // this must always be the last bit
 
 #define CONFIG_REQUIRED_INITIAL (CONFIG_RATE_NAV | CONFIG_RATE_POSLLH | CONFIG_RATE_STATUS | CONFIG_RATE_VELNED)
 
@@ -120,7 +114,7 @@ public:
     }
 
     void broadcast_configuration_failure_reason(void) const override;
-    void Write_AP_Logger_Log_Startup_messages() const override;
+    void Write_DataFlash_Log_Startup_messages() const override;
 
     // get the velocity lag, returns true if the driver is confident in the returned value
     bool get_lag(float &lag_sec) const override;
@@ -188,19 +182,6 @@ private:
         uint32_t res3;
         uint32_t res4;
     };
-    struct PACKED ubx_cfg_tp5 {
-        uint8_t tpIdx;
-        uint8_t version;
-        uint8_t reserved1[2];
-        int16_t antCableDelay;
-        int16_t rfGroupDelay;
-        uint32_t freqPeriod;
-        uint32_t freqPeriodLock;
-        uint32_t pulseLenRatio;
-        uint32_t pulseLenRatioLock;
-        int32_t userConfigDelay;
-        uint32_t flags;
-    };
     struct PACKED ubx_cfg_prt {
         uint8_t portID;
     };
@@ -212,7 +193,7 @@ private:
         uint32_t scanmode1;
     };
     struct PACKED ubx_nav_posllh {
-        uint32_t itow;                                  // GPS msToW
+        uint32_t time;                                  // GPS msToW
         int32_t longitude;
         int32_t latitude;
         int32_t altitude_ellipsoid;
@@ -221,7 +202,7 @@ private:
         uint32_t vertical_accuracy;
     };
     struct PACKED ubx_nav_status {
-        uint32_t itow;                                  // GPS msToW
+        uint32_t time;                                  // GPS msToW
         uint8_t fix_type;
         uint8_t fix_status;
         uint8_t differential_status;
@@ -230,7 +211,7 @@ private:
         uint32_t uptime;                                // milliseconds
     };
     struct PACKED ubx_nav_dop {
-        uint32_t itow;                                  // GPS msToW
+        uint32_t time;                                  // GPS msToW
         uint16_t gDOP;
         uint16_t pDOP;
         uint16_t tDOP;
@@ -240,7 +221,7 @@ private:
         uint16_t eDOP;
     };
     struct PACKED ubx_nav_solution {
-        uint32_t itow;
+        uint32_t time;
         int32_t time_nsec;
         uint16_t week;
         uint8_t fix_type;
@@ -282,7 +263,7 @@ private:
         uint8_t reserved2[4]; 
     };
     struct PACKED ubx_nav_velned {
-        uint32_t itow;                                  // GPS msToW
+        uint32_t time;                                  // GPS msToW
         int32_t ned_north;
         int32_t ned_east;
         int32_t ned_down;
@@ -291,15 +272,6 @@ private:
         int32_t heading_2d;
         uint32_t speed_accuracy;
         uint32_t heading_accuracy;
-    };
-
-    struct PACKED ubx_nav_timegps {
-        uint32_t itow;
-        int32_t ftow;
-        uint16_t week;
-        int8_t leapS;
-        uint8_t valid; //  leapsvalid | weekvalid | tow valid;
-        uint32_t tAcc;
     };
 
     // Lea6 uses a 60 byte message
@@ -427,7 +399,6 @@ private:
         ubx_nav_dop dop;
         ubx_nav_solution solution;
         ubx_nav_pvt pvt;
-        ubx_nav_timegps timegps;
         ubx_nav_velned velned;
         ubx_cfg_msg_rate msg_rate;
         ubx_cfg_msg_rate_6 msg_rate_6;
@@ -438,7 +409,6 @@ private:
         ubx_mon_hw_68 mon_hw_68;
         ubx_mon_hw2 mon_hw2;
         ubx_mon_ver mon_ver;
-        ubx_cfg_tp5 nav_tp5;
 #if UBLOX_GNSS_SETTINGS
         ubx_cfg_gnss gnss;
 #endif
@@ -466,7 +436,6 @@ private:
         MSG_DOP = 0x4,
         MSG_SOL = 0x6,
         MSG_PVT = 0x7,
-        MSG_TIMEGPS = 0x20,
         MSG_VELNED = 0x12,
         MSG_CFG_CFG = 0x09,
         MSG_CFG_RATE = 0x08,
@@ -475,7 +444,6 @@ private:
         MSG_CFG_PRT = 0x00,
         MSG_CFG_SBAS = 0x16,
         MSG_CFG_GNSS = 0x3E,
-        MSG_CFG_TP5 = 0x31,
         MSG_MON_HW = 0x09,
         MSG_MON_HW2 = 0x0B,
         MSG_MON_VER = 0x04,
@@ -522,12 +490,10 @@ private:
         STEP_STATUS,
         STEP_POSLLH,
         STEP_VELNED,
-        STEP_TIMEGPS,
         STEP_POLL_SVINFO, // poll svinfo
         STEP_POLL_SBAS, // poll SBAS
         STEP_POLL_NAV, // poll NAV settings
         STEP_POLL_GNSS, // poll GNSS
-        STEP_POLL_TP5, // poll TP5
         STEP_DOP,
         STEP_MON_HW,
         STEP_MON_HW2,
@@ -595,7 +561,6 @@ private:
     void        _request_version(void);
     void        _save_cfg(void);
     void        _verify_rate(uint8_t msg_class, uint8_t msg_id, uint8_t rate);
-    void        _check_new_itow(uint32_t itow);
 
     void unexpected_message(void);
     void log_mon_hw(void);

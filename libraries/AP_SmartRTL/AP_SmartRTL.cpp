@@ -13,10 +13,6 @@
 
 #include "AP_SmartRTL.h"
 
-#include <AP_AHRS/AP_AHRS.h>
-#include <AP_Logger/AP_Logger.h>
-#include <GCS_MAVLink/GCS.h>
-
 extern const AP_HAL::HAL& hal;
 
 const AP_Param::GroupInfo AP_SmartRTL::var_info[] = {
@@ -817,7 +813,7 @@ AP_SmartRTL::dist_point AP_SmartRTL::segment_segment_dist(const Vector3f &p1, co
     return {dP.length(), midpoint};
 }
 
-// de-activate SmartRTL, send warning to GCS and logger
+// de-activate SmartRTL, send warning to GCS and log to dataflash
 void AP_SmartRTL::deactivate(SRTL_Actions action, const char *reason)
 {
     _active = false;
@@ -829,7 +825,7 @@ void AP_SmartRTL::deactivate(SRTL_Actions action, const char *reason)
 void AP_SmartRTL::log_action(SRTL_Actions action, const Vector3f &point)
 {
     if (!_example_mode) {
-        AP::logger().Write_SRTL(_active, _path_points_count, _path_points_max, action, point);
+        DataFlash_Class::instance()->Log_Write_SRTL(_active, _path_points_count, _path_points_max, action, point);
     }
 }
 

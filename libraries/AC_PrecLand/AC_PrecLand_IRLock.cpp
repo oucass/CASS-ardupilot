@@ -1,6 +1,8 @@
 #include <AP_HAL/AP_HAL.h>
 #include "AC_PrecLand_IRLock.h"
 
+extern const AP_HAL::HAL& hal;
+
 // Constructor
 AC_PrecLand_IRLock::AC_PrecLand_IRLock(const AC_PrecLand& frontend, AC_PrecLand::precland_state& state)
     : AC_PrecLand_Backend(frontend, state),

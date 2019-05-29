@@ -1,4 +1,4 @@
-#include <AP_HAL/AP_HAL_Boards.h>
+#include <AP_Common/AP_Common.h>
 
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BEBOP
 #include "GPIO_Bebop.h"

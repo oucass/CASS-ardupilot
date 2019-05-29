@@ -20,8 +20,6 @@
 #include "AP_HAL/AP_HAL.h"
 #include "AP_Math/AP_Math.h"
 
-#include <stdio.h>
-
 using namespace SITL;
 
 // table of user settable parameters

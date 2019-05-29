@@ -2,7 +2,7 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 
 class AP_AutoTune {
 public:
@@ -34,7 +34,7 @@ public:
 
 
     // constructor
-    AP_AutoTune(ATGains &_gains, ATType type, const AP_Vehicle::FixedWing &parms);
+    AP_AutoTune(ATGains &_gains, ATType type, const AP_Vehicle::FixedWing &parms, DataFlash_Class &_dataflash);
 
     // called when autotune mode is entered
     void start(void);
@@ -58,6 +58,8 @@ private:
     ATType type;
 
 	const AP_Vehicle::FixedWing &aparm;
+
+    DataFlash_Class &dataflash;
 
     // did we saturate surfaces?
     bool saturated_surfaces:1;

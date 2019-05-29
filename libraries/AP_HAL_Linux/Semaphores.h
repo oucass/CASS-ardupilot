@@ -11,9 +11,9 @@ namespace Linux {
 class Semaphore : public AP_HAL::Semaphore {
 public:
     Semaphore();
-    bool give() override;
-    bool take(uint32_t timeout_ms) override;
-    bool take_nonblocking() override;
+    bool give();
+    bool take(uint32_t timeout_ms);
+    bool take_nonblocking();
 protected:
     pthread_mutex_t _lock;
 };

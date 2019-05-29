@@ -17,8 +17,12 @@ void Tracker::init_tracker()
                         AP::fwversion().fw_string,
                         (unsigned)hal.util->available_memory());
 
+    init_capabilities();
+
     // Check the EEPROM format version before loading any parameters from EEPROM
     load_parameters();
+
+    gcs().set_dataflash(&DataFlash);
 
     mavlink_system.sysid = g.sysid_this_mav;
 
@@ -42,9 +46,6 @@ void Tracker::init_tracker()
     AP_Notify::flags.pre_arm_check = true;
     AP_Notify::flags.pre_arm_gps_check = true;
 
-    // initialise battery
-    battery.init();
-
     // init baro before we start the GCS, so that the CLI baro test works
     barometer.set_log_baro_bit(MASK_LOG_IMU);
     barometer.init();
@@ -56,15 +57,14 @@ void Tracker::init_tracker()
     log_init();
 #endif
 
-#ifdef ENABLE_SCRIPTING
-    if (!scripting.init()) {
-        gcs().send_text(MAV_SEVERITY_ERROR, "Scripting failed to start");
+    if (g.compass_enabled==true) {
+        if (!compass.init() || !compass.read()) {
+            hal.console->printf("Compass initialisation failed!\n");
+            g.compass_enabled = false;
+        } else {
+            ahrs.set_compass(&compass);
+        }
     }
-#endif // ENABLE_SCRIPTING
-
-    // initialise compass
-    AP::compass().set_log_bit(MASK_LOG_COMPASS);
-    AP::compass().init();
 
     // GPS Initialization
     gps.set_log_gps_bit(MASK_LOG_GPS);
@@ -78,8 +78,8 @@ void Tracker::init_tracker()
 
     barometer.calibrate();
 
-    // initialise AP_Logger library
-    logger.setVehicle_Startup_Writer(FUNCTOR_BIND(&tracker, &Tracker::Log_Write_Vehicle_Startup_Messages, void));
+    // initialise DataFlash library
+    DataFlash.setVehicle_Startup_Log_Writer(FUNCTOR_BIND(&tracker, &Tracker::Log_Write_Vehicle_Startup_Messages, void));
 
     // set serial ports non-blocking
     serial_manager.set_blocking_writes_all(false);
@@ -105,24 +105,7 @@ void Tracker::init_tracker()
     gcs().send_text(MAV_SEVERITY_INFO,"Ready to track");
     hal.scheduler->delay(1000); // Why????
 
-    switch (g.initial_mode) {
-    case MANUAL:
-        set_mode(MANUAL, MODE_REASON_STARTUP);
-        break;
-
-    case SCAN:
-        set_mode(SCAN, MODE_REASON_STARTUP);
-        break;
-
-    case STOP:
-        set_mode(STOP, MODE_REASON_STARTUP);
-        break;
-
-    case AUTO:
-    default:
-        set_mode(AUTO, MODE_REASON_STARTUP);
-        break;
-    }
+    set_mode(AUTO, MODE_REASON_STARTUP); // tracking
 
     if (g.startup_delay > 0) {
         // arm servos with trim value to allow them to start up (required
@@ -146,57 +129,47 @@ bool Tracker::get_home_eeprom(struct Location &loc)
     }
 
     // read WP position
-    loc = {
-        int32_t(wp_storage.read_uint32(5)),
-        int32_t(wp_storage.read_uint32(9)),
-        int32_t(wp_storage.read_uint32(1)),
-        Location::AltFrame::ABSOLUTE
-    };
+    loc.options = wp_storage.read_byte(0);
+    loc.alt = wp_storage.read_uint32(1);
+    loc.lat = wp_storage.read_uint32(5);
+    loc.lng = wp_storage.read_uint32(9);
 
     return true;
 }
 
-bool Tracker::set_home_eeprom(const Location &temp)
+void Tracker::set_home_eeprom(struct Location temp)
 {
-    wp_storage.write_byte(0, 0);
+    wp_storage.write_byte(0, temp.options);
     wp_storage.write_uint32(1, temp.alt);
     wp_storage.write_uint32(5, temp.lat);
     wp_storage.write_uint32(9, temp.lng);
 
     // Now have a home location in EEPROM
     g.command_total.set_and_save(1); // At most 1 entry for HOME
-    return true;
 }
 
-bool Tracker::set_home(const Location &temp)
+void Tracker::set_home(struct Location temp)
 {
+    set_home_eeprom(temp);
+    current_loc = temp;
+
     // check EKF origin has been set
     Location ekf_origin;
     if (ahrs.get_origin(ekf_origin)) {
-        if (!ahrs.set_home(temp)) {
-            return false;
-        }
+        ahrs.set_home(temp);
     }
-
-    if (!set_home_eeprom(temp)) {
-        return false;
-    }
-
-    current_loc = temp;
-
-    return true;
 }
 
 void Tracker::arm_servos()
 {
     hal.util->set_soft_armed(true);
-    logger.set_vehicle_armed(true);
+    DataFlash.set_vehicle_armed(true);
 }
 
 void Tracker::disarm_servos()
 {
     hal.util->set_soft_armed(false);
-    logger.set_vehicle_armed(false);
+    DataFlash.set_vehicle_armed(false);
 }
 
 /*
@@ -234,9 +207,7 @@ void Tracker::set_mode(enum ControlMode mode, mode_reason_t reason)
     }
 
 	// log mode change
-	logger.Write_Mode(control_mode, reason);
-
-    nav_status.bearing = ahrs.yaw_sensor * 0.01f;
+	DataFlash.Log_Write_Mode(control_mode, reason);
 }
 
 /*
@@ -244,7 +215,7 @@ void Tracker::set_mode(enum ControlMode mode, mode_reason_t reason)
  */
 bool Tracker::should_log(uint32_t mask)
 {
-    if (!logger.should_log(mask)) {
+    if (!DataFlash.should_log(mask)) {
         return false;
     }
     return true;

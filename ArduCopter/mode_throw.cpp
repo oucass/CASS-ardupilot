@@ -34,7 +34,8 @@ void Copter::ModeThrow::run()
     Throw_PosHold - the copter is kept at a constant position and height
     */
 
-    if (!motors->armed()) {
+    // Don't enter THROW mode if interlock will prevent motors running
+    if (!motors->armed() && motors->get_interlock()) {
         // state machine entry is always from a disarmed state
         stage = Throw_Disarmed;
 
@@ -109,30 +110,26 @@ void Copter::ModeThrow::run()
 
         // prevent motors from rotating before the throw is detected unless enabled by the user
         if (g.throw_motor_start == 1) {
-            motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
+            motors->set_desired_spool_state(AP_Motors::DESIRED_SPIN_WHEN_ARMED);
         } else {
-            motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::SHUT_DOWN);
+            motors->set_desired_spool_state(AP_Motors::DESIRED_SHUT_DOWN);
         }
 
         // demand zero throttle (motors will be stopped anyway) and continually reset the attitude controller
-        attitude_control->set_yaw_target_to_current_heading();
-        attitude_control->reset_rate_controller_I_terms();
-        attitude_control->set_throttle_out(0,true,g.throttle_filt);
+        attitude_control->set_throttle_out_unstabilized(0,true,g.throttle_filt);
         break;
 
     case Throw_Detecting:
 
         // prevent motors from rotating before the throw is detected unless enabled by the user
         if (g.throw_motor_start == 1) {
-            motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
+            motors->set_desired_spool_state(AP_Motors::DESIRED_SPIN_WHEN_ARMED);
         } else {
-            motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::SHUT_DOWN);
+            motors->set_desired_spool_state(AP_Motors::DESIRED_SHUT_DOWN);
         }
 
         // Hold throttle at zero during the throw and continually reset the attitude controller
-        attitude_control->set_yaw_target_to_current_heading();
-        attitude_control->reset_rate_controller_I_terms();
-        attitude_control->set_throttle_out(0,true,g.throttle_filt);
+        attitude_control->set_throttle_out_unstabilized(0,true,g.throttle_filt);
 
         // Play the waiting for throw tone sequence to alert the user
         AP_Notify::flags.waiting_for_throw = true;
@@ -142,7 +139,7 @@ void Copter::ModeThrow::run()
     case Throw_Uprighting:
 
         // set motors to full range
-        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
+        motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
 
         // demand a level roll/pitch attitude with zero yaw rate
         attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(0.0f, 0.0f, 0.0f);
@@ -155,7 +152,7 @@ void Copter::ModeThrow::run()
     case Throw_HgtStabilise:
 
         // set motors to full range
-        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
+        motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
 
         // call attitude controller
         attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(0.0f, 0.0f, 0.0f);
@@ -169,7 +166,7 @@ void Copter::ModeThrow::run()
     case Throw_PosHold:
 
         // set motors to full range
-        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
+        motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
 
         // run loiter controller
         loiter_nav->update();
@@ -197,7 +194,7 @@ void Copter::ModeThrow::run()
         const bool attitude_ok = (stage > Throw_Uprighting) || throw_attitude_good();
         const bool height_ok = (stage > Throw_HgtStabilise) || throw_height_good();
         const bool pos_ok = (stage > Throw_PosHold) || throw_position_good();
-        AP::logger().Write(
+        DataFlash_Class::instance()->Log_Write(
             "THRO",
             "TimeUS,Stage,Vel,VelZ,Acc,AccEfZ,Throw,AttOk,HgtOk,PosOk",
             "s-nnoo----",

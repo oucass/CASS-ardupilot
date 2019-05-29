@@ -141,7 +141,7 @@ private:
     bool erase_all();
 
     // write all of mem_buffer to current sector
-    bool write_all();
+    bool write_all(void);
 
     // return true if all bytes are zero
     bool all_zero(uint16_t ofs, uint16_t size);

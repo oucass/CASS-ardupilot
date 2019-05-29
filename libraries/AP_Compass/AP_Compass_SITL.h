@@ -9,13 +9,13 @@
 #include <AP_Math/AP_Math.h>
 #include <AP_Declination/AP_Declination.h>
 
-#define SITL_NUM_COMPASSES 3
+#define SITL_NUM_COMPASSES 2
 
 class AP_Compass_SITL : public AP_Compass_Backend {
 public:
     AP_Compass_SITL();
 
-    void read(void) override;
+    void read(void);
 
 private:
     uint8_t _compass_instance[SITL_NUM_COMPASSES];

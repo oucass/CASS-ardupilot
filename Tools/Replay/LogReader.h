@@ -3,7 +3,7 @@
 #include "LR_MsgHandler.h"
 #include "Parameters.h"
 
-class LogReader : public AP_LoggerFileReader
+class LogReader : public DataFlashFileReader
 {
 public:
     LogReader(AP_AHRS &_ahrs,
@@ -11,7 +11,7 @@ public:
               Compass &_compass,
               AP_GPS &_gps,
               AP_Airspeed &_airspeed,
-              AP_Logger &_logger,
+              DataFlash_Class &_dataflash,
               struct LogStructure *log_structure,
               uint8_t log_structure_count,
               const char **&nottypes);
@@ -47,7 +47,7 @@ private:
     Compass &compass;
     AP_GPS &gps;
     AP_Airspeed &airspeed;
-    AP_Logger &logger;
+    DataFlash_Class &dataflash;
     struct LogStructure *_log_structure;
     uint8_t _log_structure_count;
 

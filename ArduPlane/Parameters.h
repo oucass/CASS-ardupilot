@@ -186,7 +186,7 @@ public:
         k_param_imu = 130,  // unused
         k_param_altitude_mix, // deprecated
 
-        k_param_compass_enabled_deprecated,
+        k_param_compass_enabled,
         k_param_compass,
         k_param_battery_monitoring, // unused
         k_param_volt_div_ratio,     // unused
@@ -342,7 +342,7 @@ public:
         k_param_mixing_offset,
         k_param_dspoiler_rud_rate,
 
-        k_param_logger = 253, // Logging Group
+        k_param_DataFlash = 253, // Logging Group
 
         // 254,255: reserved
     };
@@ -461,6 +461,7 @@ public:
     AP_Int8  hil_mode;
 #endif
 
+    AP_Int8 compass_enabled;
     AP_Int8 flap_1_percent;
     AP_Int8 flap_1_speed;
     AP_Int8 flap_2_percent;
@@ -486,7 +487,7 @@ public:
     AP_Int8 fbwa_tdrag_chan;
     AP_Int8 rangefinder_landing;
     AP_Int8 flap_slewrate;
-#if HAL_WITH_IO_MCU
+#if HAVE_PX4_MIXER || HAL_WITH_IO_MCU
     AP_Int8 override_channel;
     AP_Int8 override_safety;
 #endif
@@ -532,9 +533,6 @@ public:
     // dual motor tailsitter rudder to differential thrust scaling: 0-100%
     AP_Int8 rudd_dt_gain;
 
-    // QACRO mode max yaw rate in deg/sec
-    AP_Int16 acro_yaw_rate;
-
     // mask of channels to do manual pass-thru for
     AP_Int32 manual_rc_mask;
 
@@ -553,17 +551,14 @@ public:
 #endif // ENABLE_SCRIPTING
 
     AP_Int8 takeoff_throttle_accel_count;
-    AP_Int8 takeoff_timeout;
 
 #if LANDING_GEAR_ENABLED == ENABLED
     AP_LandingGear landing_gear;
 #endif
 
     // crow flaps weighting
-    AP_Int8 crow_flap_weight_outer;
-    AP_Int8 crow_flap_weight_inner;
-    AP_Int8 crow_flap_options;
-    AP_Int8 crow_flap_aileron_matching;
+    AP_Int8 crow_flap_weight1;
+    AP_Int8 crow_flap_weight2;
 };
 
 extern const AP_Param::Info var_info[];

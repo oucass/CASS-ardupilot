@@ -9,7 +9,7 @@ bool AP_Arming_Sub::rc_calibration_checks(bool display_failure)
         sub.channel_throttle,
         sub.channel_yaw
     };
-    return rc_checks_copter_sub(display_failure, channels);
+    return rc_checks_copter_sub(display_failure, channels, false /* check_min_max */);
 }
 
 bool AP_Arming_Sub::pre_arm_checks(bool display_failure)
@@ -31,7 +31,7 @@ bool AP_Arming_Sub::ins_checks(bool display_failure)
     // additional sub-specific checks
     if ((checks_to_perform & ARMING_CHECK_ALL) ||
         (checks_to_perform & ARMING_CHECK_INS)) {
-        if (!AP::ahrs().prearm_healthy()) {
+        if (!AP::ahrs().healthy()) {
             const char *reason = AP::ahrs().prearm_failure_reason();
             if (reason == nullptr) {
                 reason = "AHRS not healthy";

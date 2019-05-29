@@ -4,7 +4,7 @@
 // 1. HIL_MODE_SENSORS: full sensor simulation
 #define HIL_MODE            HIL_MODE_SENSORS
 
-// HIL_PORT SELECTION
+// HIL_PORT SELCTION
 //
 // PORT 1
 // If you would like to run telemetry communications for a groundstation

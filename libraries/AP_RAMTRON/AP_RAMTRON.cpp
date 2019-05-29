@@ -5,6 +5,7 @@
  */
 
 #include "AP_RAMTRON.h"
+#include <AP_Common/Semaphore.h>
 
 extern const AP_HAL::HAL &hal;
 

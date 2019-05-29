@@ -27,7 +27,6 @@
 #include "hwdef.h"
 #include <AP_HAL_ChibiOS/hwdef/common/usbcfg.h>
 #include <AP_HAL_ChibiOS/hwdef/common/stm32_util.h>
-#include <AP_HAL_ChibiOS/hwdef/common/watchdog.h>
 #include "support.h"
 #include "bl_protocol.h"
 
@@ -54,10 +53,7 @@ int main(void)
     uint32_t timeout = HAL_BOOTLOADER_TIMEOUT;
 
     enum rtc_boot_magic m = check_fast_reboot();
-    if (stm32_was_watchdog_reset()) {
-        try_boot = true;
-        timeout = 0;
-    } else if (m == RTC_BOOT_HOLD) {
+    if (m == RTC_BOOT_HOLD) {
         timeout = 0;
     } else if (m == RTC_BOOT_FAST) {
         try_boot = true;

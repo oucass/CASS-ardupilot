@@ -15,7 +15,9 @@
 #pragma once
 
 /*
-  define common vehicle build types.
+  define common vehicle build types. Note that the APM_BUILD_DIRECTORY
+  define is only available with makefile based build, not with
+  arduino.
   Also note that code needs to support other APM_BUILD_DIRECTORY
   values for example sketches
  */
@@ -26,7 +28,6 @@
 #define APM_BUILD_UNKNOWN        5
 #define APM_BUILD_Replay         6
 #define APM_BUILD_ArduSub        7
-#define APM_BUILD_iofirmware     8
 
 /*
   using this macro catches cases where we try to check vehicle type on

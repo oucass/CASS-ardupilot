@@ -49,11 +49,10 @@ extern const AP_HAL::HAL& hal;
    already know that we should setup the rangefinder
 */
 AP_RangeFinder_Benewake::AP_RangeFinder_Benewake(RangeFinder::RangeFinder_State &_state,
-                                                             AP_RangeFinder_Params &_params,
                                                              AP_SerialManager &serial_manager,
                                                              uint8_t serial_instance,
                                                              benewake_model_type model) :
-    AP_RangeFinder_Backend(_state, _params),
+    AP_RangeFinder_Backend(_state),
     model_type(model)
 {
     uart = serial_manager.find_serial(AP_SerialManager::SerialProtocol_Rangefinder, serial_instance);
@@ -122,6 +121,10 @@ bool AP_RangeFinder_Benewake::get_reading(uint16_t &reading_cm)
                         // this reading is out of range
                         count_out_of_range++;
                     } else if (model_type == BENEWAKE_TFmini) {
+                        // TFmini has short distance mode (mm)
+                        if (linebuf[6] == 0x02) {
+                            dist *= 0.1f;
+                        }
                         // no signal byte from TFmini so add distance to sum
                         sum_cm += dist;
                         count++;

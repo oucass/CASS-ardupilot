@@ -41,7 +41,7 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
     GCS_MAVLINK_Copter &gcs_chan = gcs().chan(chan-MAVLINK_COMM_0);
 
     // check compass is enabled
-    if (!AP::compass().enabled()) {
+    if (!g.compass_enabled) {
         gcs_chan.send_text(MAV_SEVERITY_CRITICAL, "Compass disabled");
         ap.compass_mot = false;
         return MAV_RESULT_TEMPORARILY_REJECTED;
@@ -124,8 +124,6 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
         interference_pct[i] = 0.0f;
     }
 
-    EXPECT_DELAY_MS(5000);
-
     // enable motors and pass through throttle
     init_rc_out();
     enable_motor_output();
@@ -137,8 +135,6 @@ MAV_RESULT Copter::mavlink_compassmot(mavlink_channel_t chan)
 
     // main run while there is no user input and the compass is healthy
     while (command_ack_start == command_ack_counter && compass.healthy() && motors->armed()) {
-        EXPECT_DELAY_MS(5000);
-
         // 50hz loop
         if (millis() - last_run_time < 20) {
             hal.scheduler->delay(5);

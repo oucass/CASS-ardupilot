@@ -70,43 +70,20 @@ void Submarine::calculate_forces(const struct sitl_input &input, Vector3f &rot_a
     	body_accel.z = -GRAVITY_MSS;
     }
 
-    // Calculate linear drag forces
-    Vector3f linear_drag_forces;
-    calculate_drag_force(velocity_air_bf, frame_property.linear_drag_coefficient, linear_drag_forces);
-    // Add forces in body frame accel
-    body_accel -= linear_drag_forces / frame_property.weight;
+    float terminal_rotation_rate = 10.0;
+    if (terminal_rotation_rate > 0) {
+        // rotational air resistance
+        rot_accel.x -= gyro.x * radians(400.0) / terminal_rotation_rate;
+        rot_accel.y -= gyro.y * radians(400.0) / terminal_rotation_rate;
+        rot_accel.z -= gyro.z * radians(400.0) / terminal_rotation_rate;
+    }
 
-    // Calculate angular drag forces
-    Vector3f angular_drag_forces;
-    calculate_drag_force(gyro, frame_property.angular_drag_coefficient, angular_drag_forces);
-    // Add forces in body frame accel
-    rot_accel -= angular_drag_forces / frame_property.weight;
-}
-
-/**
- * @brief Calculate drag force against body
- *
- * @param velocity Body frame velocity of fluid
- * @param drag_coefficient Drag coefficient of body
- * @param force Output forces
- * $ F_D = rho * v^2 * A * C_D / 2 $
- * rho = water density (kg/m^3), V = velocity (m/s), A = area (m^2), C_D = drag_coefficient
- */
-void Submarine::calculate_drag_force(const Vector3f &velocity, const Vector3f &drag_coefficient, Vector3f &force)
-{
-    /**
-     * @brief It's necessary to keep the velocity orientation from the body frame.
-     *     To do so, a mathematical artifice is used to do velocity square but without loosing the direction.
-     *  $(|V|/V)*V^2$ = $|V|*V$
-     */
-    const Vector3f velocity_2(
-        fabsf(velocity.x) * velocity.x,
-        fabsf(velocity.y) * velocity.y,
-        fabsf(velocity.z) * velocity.z
-    );
-
-    force = (velocity_2 * water_density) * frame_property.equivalent_sphere_area / 2.0f;
-    force *= drag_coefficient;
+    float terminal_velocity = 3.0;
+    if (terminal_velocity > 0) {
+        // air resistance
+        Vector3f air_resistance = -velocity_air_ef * (GRAVITY_MSS/terminal_velocity);
+        body_accel += dcm.transposed() * air_resistance;
+    }
 }
 
 /**
@@ -116,7 +93,7 @@ void Submarine::calculate_drag_force(const Vector3f &velocity, const Vector3f &d
 */
 float Submarine::calculate_buoyancy_acceleration()
 {
-    float below_water_level = position.z - frame_property.height/2;
+    float below_water_level = position.z - frame_proprietary.height/2;
 
     // Completely above water level
     if (below_water_level < 0) {
@@ -124,12 +101,12 @@ float Submarine::calculate_buoyancy_acceleration()
     }
 
     // Completely below water level
-    if (below_water_level > frame_property.height/2) {
-        return frame_property.buoyancy_acceleration;
+    if (below_water_level > frame_proprietary.height/2) {
+        return frame_proprietary.bouyancy_acceleration;
     }
 
     // bouyant force is proportional to fraction of height in water
-    return frame_property.buoyancy_acceleration * below_water_level/frame_property.height;
+    return frame_proprietary.bouyancy_acceleration * below_water_level/frame_proprietary.height;
 };
 
 /*

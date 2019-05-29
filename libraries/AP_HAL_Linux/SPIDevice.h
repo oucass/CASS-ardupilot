@@ -90,7 +90,7 @@ public:
     }
 
     /* AP_HAL::SPIDeviceManager implementation */
-    AP_HAL::OwnPtr<AP_HAL::SPIDevice> get_device(const char *name) override;
+    AP_HAL::OwnPtr<AP_HAL::SPIDevice> get_device(const char *name);
 
     /*
      * Stop all SPI threads and block until they are finalized. This doesn't
@@ -100,10 +100,10 @@ public:
     void teardown();
 
     /* See AP_HAL::SPIDeviceManager::get_count() */
-    uint8_t get_count() override;
+    uint8_t get_count();
 
     /* See AP_HAL::SPIDeviceManager::get_device_name() */
-    const char *get_device_name(uint8_t idx) override;
+    const char *get_device_name(uint8_t idx);
 
 protected:
     void _unregister(SPIBus &b);

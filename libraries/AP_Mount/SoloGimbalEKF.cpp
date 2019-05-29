@@ -1,5 +1,7 @@
 #include <AP_HAL/AP_HAL.h>
 
+#if HAL_CPU_CLASS >= HAL_CPU_CLASS_150
+
 // uncomment this to force the optimisation of this code, note that
 // this makes debugging harder
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL || CONFIG_HAL_BOARD == HAL_BOARD_LINUX
@@ -960,3 +962,4 @@ bool SoloGimbalEKF::getStatus() const
     return  YawAligned && (run_time > 15000);
 }
 
+#endif // HAL_CPU_CLASS

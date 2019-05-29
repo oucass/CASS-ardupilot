@@ -38,8 +38,10 @@ const AP_Scheduler::Task Sub::scheduler_tasks[] = {
     SCHED_TASK_CLASS(AP_Baro,             &sub.barometer,    accumulate,          50,  90),
     SCHED_TASK_CLASS(AP_Notify,           &sub.notify,       update,              50,  90),
     SCHED_TASK(one_hz_loop,            1,    100),
-    SCHED_TASK_CLASS(GCS,                 (GCS*)&sub._gcs,   update_receive,     400, 180),
-    SCHED_TASK_CLASS(GCS,                 (GCS*)&sub._gcs,   update_send,        400, 550),
+    SCHED_TASK(gcs_update,           400,    180),
+    SCHED_TASK(gcs_send_heartbeat,     1,    110),
+    SCHED_TASK(gcs_send_deferred,     50,    550),
+    SCHED_TASK(gcs_data_stream_send,  50,    550),
 #if MOUNT == ENABLED
     SCHED_TASK_CLASS(AP_Mount,            &sub.camera_mount, update,              50,  75),
 #endif
@@ -48,13 +50,13 @@ const AP_Scheduler::Task Sub::scheduler_tasks[] = {
 #endif
     SCHED_TASK(ten_hz_logging_loop,   10,    350),
     SCHED_TASK(twentyfive_hz_logging, 25,    110),
-    SCHED_TASK_CLASS(AP_Logger,     &sub.logger,    periodic_tasks,     400, 300),
+    SCHED_TASK_CLASS(DataFlash_Class,     &sub.DataFlash,    periodic_tasks,     400, 300),
     SCHED_TASK_CLASS(AP_InertialSensor,   &sub.ins,          periodic,           400,  50),
     SCHED_TASK_CLASS(AP_Scheduler,        &sub.scheduler,    update_logging,     0.1,  75),
 #if RPM_ENABLED == ENABLED
     SCHED_TASK(rpm_update,            10,    200),
 #endif
-    SCHED_TASK_CLASS(Compass,          &sub.compass,              cal_update, 100, 100),
+    SCHED_TASK(compass_cal_update,   100,    100),
     SCHED_TASK(accel_cal_update,      10,    100),
     SCHED_TASK(terrain_update,        10,    100),
 #if GRIPPER_ENABLED == ENABLED
@@ -166,10 +168,14 @@ void Sub::update_batt_compass()
     // read battery before compass because it may be used for motor interference compensation
     battery.read();
 
-    if (AP::compass().enabled()) {
+    if (g.compass_enabled) {
         // update compass with throttle value - used for compassmot
         compass.set_throttle(motors.get_throttle());
         compass.read();
+        // log compass information
+        if (should_log(MASK_LOG_COMPASS) && !ahrs.have_ekf_logging()) {
+            DataFlash.Log_Write_Compass();
+        }
     }
 }
 
@@ -180,28 +186,28 @@ void Sub::ten_hz_logging_loop()
     // log attitude data if we're not already logging at the higher rate
     if (should_log(MASK_LOG_ATTITUDE_MED) && !should_log(MASK_LOG_ATTITUDE_FAST)) {
         Log_Write_Attitude();
-        logger.Write_Rate(&ahrs_view, motors, attitude_control, pos_control);
+        DataFlash.Log_Write_Rate(ahrs, motors, attitude_control, pos_control);
         if (should_log(MASK_LOG_PID)) {
-            logger.Write_PID(LOG_PIDR_MSG, attitude_control.get_rate_roll_pid().get_pid_info());
-            logger.Write_PID(LOG_PIDP_MSG, attitude_control.get_rate_pitch_pid().get_pid_info());
-            logger.Write_PID(LOG_PIDY_MSG, attitude_control.get_rate_yaw_pid().get_pid_info());
-            logger.Write_PID(LOG_PIDA_MSG, pos_control.get_accel_z_pid().get_pid_info());
+            DataFlash.Log_Write_PID(LOG_PIDR_MSG, attitude_control.get_rate_roll_pid().get_pid_info());
+            DataFlash.Log_Write_PID(LOG_PIDP_MSG, attitude_control.get_rate_pitch_pid().get_pid_info());
+            DataFlash.Log_Write_PID(LOG_PIDY_MSG, attitude_control.get_rate_yaw_pid().get_pid_info());
+            DataFlash.Log_Write_PID(LOG_PIDA_MSG, pos_control.get_accel_z_pid().get_pid_info());
         }
     }
     if (should_log(MASK_LOG_MOTBATT)) {
         Log_Write_MotBatt();
     }
     if (should_log(MASK_LOG_RCIN)) {
-        logger.Write_RCIN();
+        DataFlash.Log_Write_RCIN();
     }
     if (should_log(MASK_LOG_RCOUT)) {
-        logger.Write_RCOUT();
+        DataFlash.Log_Write_RCOUT();
     }
     if (should_log(MASK_LOG_NTUN) && mode_requires_GPS(control_mode)) {
         pos_control.write_log();
     }
     if (should_log(MASK_LOG_IMU) || should_log(MASK_LOG_IMU_FAST) || should_log(MASK_LOG_IMU_RAW)) {
-        logger.Write_Vibration();
+        DataFlash.Log_Write_Vibration();
     }
     if (should_log(MASK_LOG_CTUN)) {
         attitude_control.control_monitor_log();
@@ -214,18 +220,18 @@ void Sub::twentyfive_hz_logging()
 {
     if (should_log(MASK_LOG_ATTITUDE_FAST)) {
         Log_Write_Attitude();
-        logger.Write_Rate(&ahrs_view, motors, attitude_control, pos_control);
+        DataFlash.Log_Write_Rate(ahrs, motors, attitude_control, pos_control);
         if (should_log(MASK_LOG_PID)) {
-            logger.Write_PID(LOG_PIDR_MSG, attitude_control.get_rate_roll_pid().get_pid_info());
-            logger.Write_PID(LOG_PIDP_MSG, attitude_control.get_rate_pitch_pid().get_pid_info());
-            logger.Write_PID(LOG_PIDY_MSG, attitude_control.get_rate_yaw_pid().get_pid_info());
-            logger.Write_PID(LOG_PIDA_MSG, pos_control.get_accel_z_pid().get_pid_info());
+            DataFlash.Log_Write_PID(LOG_PIDR_MSG, attitude_control.get_rate_roll_pid().get_pid_info());
+            DataFlash.Log_Write_PID(LOG_PIDP_MSG, attitude_control.get_rate_pitch_pid().get_pid_info());
+            DataFlash.Log_Write_PID(LOG_PIDY_MSG, attitude_control.get_rate_yaw_pid().get_pid_info());
+            DataFlash.Log_Write_PID(LOG_PIDA_MSG, pos_control.get_accel_z_pid().get_pid_info());
         }
     }
 
     // log IMU data if we're not already logging at the higher rate
     if (should_log(MASK_LOG_IMU) && !should_log(MASK_LOG_IMU_RAW)) {
-        logger.Write_IMU();
+        DataFlash.Log_Write_IMU();
     }
 }
 
@@ -261,7 +267,6 @@ void Sub::one_hz_loop()
     ap.pre_arm_check = arm_check;
     AP_Notify::flags.pre_arm_check = arm_check;
     AP_Notify::flags.pre_arm_gps_check = position_ok();
-    AP_Notify::flags.flying = motors.armed();
 
     if (should_log(MASK_LOG_ANY)) {
         Log_Write_Data(DATA_AP_STATE, ap.value);
@@ -269,7 +274,7 @@ void Sub::one_hz_loop()
 
     if (!motors.armed()) {
         // make it possible to change ahrs orientation at runtime during initial config
-        ahrs.update_orientation();
+        ahrs.set_orientation();
 
         // set all throttle channel settings
         motors.set_throttle_range(channel_throttle->get_radio_min(), channel_throttle->get_radio_max());
@@ -331,6 +336,7 @@ void Sub::update_altitude()
     // read in baro altitude
     read_barometer();
 
+    // write altitude info to dataflash logs
     if (should_log(MASK_LOG_CTUN)) {
         Log_Write_Control_Tuning();
     }

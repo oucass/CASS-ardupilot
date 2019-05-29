@@ -134,16 +134,16 @@ const AP_Param::GroupInfo AP_Radio::var_info[] = {
     AP_GROUPEND
 };
 
-AP_Radio *AP_Radio::_singleton;
+AP_Radio *AP_Radio::_instance;
 
 // constructor
 AP_Radio::AP_Radio(void)
 {
     AP_Param::setup_object_defaults(this, var_info);
-    if (_singleton != nullptr) {
+    if (_instance != nullptr) {
         AP_HAL::panic("Multiple AP_Radio declarations");
     }
-    _singleton = this;
+    _instance = this;
 }
 
 bool AP_Radio::init(void)

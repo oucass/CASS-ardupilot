@@ -21,6 +21,7 @@ public:
     bool gps_checks(bool display_failure) override;
 
 protected:
+    bool fence_checks(bool report);
     bool proximity_check(bool report);
 
 private:

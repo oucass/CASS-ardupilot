@@ -4,7 +4,7 @@
 
 #include "AP_Mount_SoloGimbal.h"
 #include "SoloGimbal.h"
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <GCS_MAVLink/GCS.h>
 
@@ -118,13 +118,13 @@ void AP_Mount_SoloGimbal::handle_gimbal_report(mavlink_channel_t chan, const mav
     _gimbal.update_target(_angle_ef_target_rad);
     _gimbal.receive_feedback(chan,msg);
 
-    AP_Logger *logger = AP_Logger::get_singleton();
-    if (logger == nullptr) {
+    DataFlash_Class *df = DataFlash_Class::instance();
+    if (df == nullptr) {
         return;
     }
 
-    if(!_params_saved && logger->logging_started()) {
-        _gimbal.fetch_params();       //last parameter save might not be stored in logger so retry
+    if(!_params_saved && df->logging_started()) {
+        _gimbal.fetch_params();       //last parameter save might not be stored in dataflash so retry
         _params_saved = true;
     }
 

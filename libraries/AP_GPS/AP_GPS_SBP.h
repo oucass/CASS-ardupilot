@@ -177,7 +177,7 @@ private:
     uint32_t crc_error_counter;
 
     // ************************************************************************
-    // Logging to AP_Logger
+    // Logging to DataFlash
     // ************************************************************************
 
     void logging_log_full_update();

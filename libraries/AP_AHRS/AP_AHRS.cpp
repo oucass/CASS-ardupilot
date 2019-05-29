@@ -17,8 +17,7 @@
 #include "AP_AHRS.h"
 #include "AP_AHRS_View.h"
 #include <AP_HAL/AP_HAL.h>
-#include <AP_Logger/AP_Logger.h>
-#include <AP_NMEA_Output/AP_NMEA_Output.h>
+#include <DataFlash/DataFlash.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -160,16 +159,6 @@ const AP_Param::GroupInfo AP_AHRS::var_info[] = {
     AP_GROUPEND
 };
 
-// init sets up INS board orientation
-void AP_AHRS::init()
-{
-    update_orientation();
-
-#if !HAL_MINIMIZE_FEATURES && AP_AHRS_NAVEKF_AVAILABLE
-    _nmea_out = AP_NMEA_Output::probe();
-#endif
-}
-
 // return a smoothed and corrected gyro vector using the latest ins data (which may not have been consumed by the EKF yet)
 Vector3f AP_AHRS::get_gyro_latest(void) const
 {
@@ -198,7 +187,7 @@ bool AP_AHRS::airspeed_estimate(float *airspeed_ret) const
 }
 
 // set_trim
-void AP_AHRS::set_trim(const Vector3f &new_trim)
+void AP_AHRS::set_trim(Vector3f new_trim)
 {
     Vector3f trim;
     trim.x = constrain_float(new_trim.x, ToRad(-AP_AHRS_TRIM_LIMIT), ToRad(AP_AHRS_TRIM_LIMIT));
@@ -225,9 +214,9 @@ void AP_AHRS::add_trim(float roll_in_radians, float pitch_in_radians, bool save_
 }
 
 // Set the board mounting orientation, may be called while disarmed
-void AP_AHRS::update_orientation()
+void AP_AHRS::set_orientation()
 {
-    const enum Rotation orientation = (enum Rotation)_board_orientation.get();
+    enum Rotation orientation = (enum Rotation)_board_orientation.get();
     if (orientation != ROTATION_CUSTOM) {
         AP::ins().set_board_orientation(orientation);
         if (_compass != nullptr) {
@@ -300,7 +289,7 @@ Vector2f AP_AHRS::groundspeed_vector(void)
         Vector2f ret(cosf(yaw), sinf(yaw));
         ret *= airspeed;
         // adjust for estimated wind
-        const Vector3f wind = wind_estimate();
+        Vector3f wind = wind_estimate();
         ret.x += wind.x;
         ret.y += wind.y;
         return ret;
@@ -483,34 +472,27 @@ Vector2f AP_AHRS::rotate_body_to_earth2D(const Vector2f &bf) const
                     bf.x * _sin_yaw + bf.y * _cos_yaw);
 }
 
-// log ahrs home and EKF origin
+// log ahrs home and EKF origin to dataflash
 void AP_AHRS::Log_Write_Home_And_Origin()
 {
-    AP_Logger *logger = AP_Logger::get_singleton();
-    if (logger == nullptr) {
+    DataFlash_Class *df = DataFlash_Class::instance();
+    if (df == nullptr) {
         return;
     }
 #if AP_AHRS_NAVEKF_AVAILABLE
+    // log ekf origin if set
     Location ekf_orig;
     if (get_origin(ekf_orig)) {
-        logger->Write_Origin(LogOriginType::ekf_origin, ekf_orig);
+        df->Log_Write_Origin(LogOriginType::ekf_origin, ekf_orig);
     }
 #endif
 
+    // log ahrs home if set
     if (home_is_set()) {
-        logger->Write_Origin(LogOriginType::ahrs_home, _home);
+        df->Log_Write_Origin(LogOriginType::ahrs_home, _home);
     }
 }
 
-
-void AP_AHRS::update_nmea_out()
-{
-#if !HAL_MINIMIZE_FEATURES && AP_AHRS_NAVEKF_AVAILABLE
-    if (_nmea_out != nullptr) {
-        _nmea_out->update();
-    }
-#endif
-}
 
 // singleton instance
 AP_AHRS *AP_AHRS::_singleton;

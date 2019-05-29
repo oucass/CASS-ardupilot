@@ -31,7 +31,7 @@ class XmlEmit(Emit):
         self.f.write('</vehicles>')
         self.f.write('<libraries>')
 
-    def emit(self, g):
+    def emit(self, g, f):
         t = '''<parameters name=%s>\n''' % quoteattr(g.name)  # i.e. ArduPlane
 
         for param in g.params:

@@ -62,8 +62,8 @@ public:
     AP_Scheduler(const AP_Scheduler &other) = delete;
     AP_Scheduler &operator=(const AP_Scheduler&) = delete;
 
-    static AP_Scheduler *get_singleton();
-    static AP_Scheduler *_singleton;
+    static AP_Scheduler *get_instance();
+    static AP_Scheduler *_s_instance;
 
     FUNCTOR_TYPEDEF(task_fn_t, void);
 
@@ -84,7 +84,7 @@ public:
     // call to update any logging the scheduler might do; call at 1Hz
     void update_logging();
 
-    // write out PERF message to logger
+    // write out PERF message to dataflash
     void Log_Write_Performance();
 
     // call when one tick has passed
@@ -126,7 +126,7 @@ public:
     // get the time-allowed-per-loop in seconds
     float get_loop_period_s() {
         if (is_zero(_loop_period_s)) {
-            _loop_period_s = 1.0f / _loop_rate_hz;
+            _loop_period_s = 1.0 / _loop_rate_hz;
         }
         return _loop_period_s;
     }
@@ -141,6 +141,9 @@ public:
     }
     
     static const struct AP_Param::GroupInfo var_info[];
+
+    // current running task, or -1 if none. Used to debug stuck tasks
+    static int8_t current_task;
 
     // loop performance monitoring:
     AP::PerfInfo perf_info;
@@ -198,7 +201,7 @@ private:
     // performance counters
     AP_HAL::Util::perf_counter_t *_perf_counters;
 
-    // bitmask bit which indicates if we should log PERF message
+    // bitmask bit which indicates if we should log PERF message to dataflash
     uint32_t _log_performance_bit;
 };
 

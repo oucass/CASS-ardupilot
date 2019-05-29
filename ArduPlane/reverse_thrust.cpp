@@ -29,8 +29,8 @@ bool Plane::allow_reverse_thrust(void) const
         return false;
     }
 
-    switch (control_mode->mode_number()) {
-    case Mode::Number::AUTO:
+    switch (control_mode) {
+    case AUTO:
         {
         uint16_t nav_cmd = mission.get_current_nav_cmd().id;
 
@@ -64,23 +64,23 @@ bool Plane::allow_reverse_thrust(void) const
         }
         break;
 
-    case Mode::Number::LOITER:
+    case LOITER:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_LOITER);
         break;
-    case Mode::Number::RTL:
+    case RTL:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_RTL);
         break;
-    case Mode::Number::CIRCLE:
+    case CIRCLE:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_CIRCLE);
         break;
-    case Mode::Number::CRUISE:
+    case CRUISE:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_CRUISE);
         break;
-    case Mode::Number::FLY_BY_WIRE_B:
+    case FLY_BY_WIRE_B:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_FBWB);
         break;
-    case Mode::Number::AVOID_ADSB:
-    case Mode::Number::GUIDED:
+    case AVOID_ADSB:
+    case GUIDED:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_GUIDED);
         break;
     default:

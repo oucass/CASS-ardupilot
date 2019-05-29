@@ -16,8 +16,7 @@
 
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
-#include <AP_Logger/AP_Logger.h>
-#include <AP_Common/Location.h>
+#include <DataFlash/DataFlash.h>
 
 #if (HAL_OS_POSIX_IO || HAL_OS_FATFS_IO) && defined(HAL_BOARD_TERRAIN_DIRECTORY)
 #define AP_TERRAIN_AVAILABLE 1
@@ -30,6 +29,7 @@
 #include <AP_Param/AP_Param.h>
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_Mission/AP_Mission.h>
+#include <AP_Rally/AP_Rally.h>
 
 #define TERRAIN_DEBUG 0
 
@@ -76,13 +76,11 @@
 
 class AP_Terrain {
 public:
-    AP_Terrain(const AP_Mission &_mission);
+    AP_Terrain(const AP_Mission &_mission, const AP_Rally &_rally);
 
     /* Do not allow copies */
     AP_Terrain(const AP_Terrain &other) = delete;
     AP_Terrain &operator=(const AP_Terrain&) = delete;
-
-    static AP_Terrain *get_singleton(void) { return singleton; }
 
     enum TerrainStatus {
         TerrainStatusDisabled  = 0, // not enabled
@@ -94,8 +92,6 @@ public:
 
     // update terrain state. Should be called at 1Hz or more
     void update(void);
-
-    bool enabled() const { return enable; }
 
     // return status enum for health reporting
     enum TerrainStatus status(void) const { return system_status; }
@@ -172,9 +168,9 @@ public:
     float lookahead(float bearing, float distance, float climb_ratio);
 
     /*
-      log terrain status to AP_Logger
+      log terrain status to DataFlash
      */
-    void log_terrain_data();
+    void log_terrain_data(DataFlash_Class &dataflash);
 
     /*
       get some statistics for TERRAIN_REPORT
@@ -344,6 +340,10 @@ private:
     // all waypoints
     const AP_Mission &mission;
 
+    // reference to AP_Rally, so we can ask preload terrain data for 
+    // all rally points
+    const AP_Rally &rally;
+
     // cache of grids in memory, LRU
     uint8_t cache_size = 0;
     struct grid_cache *cache = nullptr;
@@ -415,7 +415,5 @@ private:
 
     // status
     enum TerrainStatus system_status = TerrainStatusDisabled;
-
-    static AP_Terrain *singleton;
 };
 #endif // AP_TERRAIN_AVAILABLE

@@ -34,5 +34,5 @@ protected:
     bool handle_avoidance_horizontal(const AP_Avoidance::Obstacle *obstacle, bool allow_mode_change);
 
     // control mode before avoidance began
-    enum Mode::Number prev_control_mode_number = Mode::Number::RTL;
+    FlightMode prev_control_mode = RTL;
 };

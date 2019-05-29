@@ -25,8 +25,6 @@ void Copter::motor_test_output()
         return;
     }
 
-    EXPECT_DELAY_MS(2000);
-
     // check for test timeout
     uint32_t now = AP_HAL::millis();
     if ((now - motor_test_start_ms) >= motor_test_timeout_ms) {
@@ -84,7 +82,7 @@ void Copter::motor_test_output()
 
         // sanity check throttle values
         if (pwm >= MOTOR_TEST_PWM_MIN && pwm <= MOTOR_TEST_PWM_MAX ) {
-            // turn on motor to specified pwm value
+            // turn on motor to specified pwm vlaue
             motors->output_test_seq(motor_test_seq, pwm);
         } else {
             motor_test_stop();
@@ -148,7 +146,6 @@ MAV_RESULT Copter::mavlink_motor_test_start(mavlink_channel_t chan, uint8_t moto
             // start test
             ap.motor_test = true;
 
-            EXPECT_DELAY_MS(3000);
             // enable and arm motors
             if (!motors->armed()) {
                 init_rc_out();

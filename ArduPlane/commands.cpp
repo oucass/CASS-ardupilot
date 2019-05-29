@@ -34,14 +34,14 @@ void Plane::set_next_WP(const struct Location &loc)
         // additionally treat zero altitude as current altitude
         if (next_WP_loc.alt == 0) {
             next_WP_loc.alt = current_loc.alt;
-            next_WP_loc.relative_alt = false;
-            next_WP_loc.terrain_alt = false;
+            next_WP_loc.flags.relative_alt = false;
+            next_WP_loc.flags.terrain_alt = false;
         }
     }
 
     // convert relative alt to absolute alt
-    if (next_WP_loc.relative_alt) {
-        next_WP_loc.relative_alt = false;
+    if (next_WP_loc.flags.relative_alt) {
+        next_WP_loc.flags.relative_alt = false;
         next_WP_loc.alt += home.alt;
     }
 
@@ -50,7 +50,7 @@ void Plane::set_next_WP(const struct Location &loc)
     // past the waypoint when we start on a leg, then use the current
     // location as the previous waypoint, to prevent immediately
     // considering the waypoint complete
-    if (current_loc.past_interval_finish_line(prev_WP_loc, next_WP_loc)) {
+    if (location_passed_point(current_loc, prev_WP_loc, next_WP_loc)) {
         gcs().send_text(MAV_SEVERITY_NOTICE, "Resetting previous waypoint");
         prev_WP_loc = current_loc;
     }
@@ -64,11 +64,13 @@ void Plane::set_next_WP(const struct Location &loc)
 
     setup_glide_slope();
     setup_turn_angle();
+
+    loiter_angle_reset();
 }
 
 void Plane::set_guided_WP(void)
 {
-    if (aparm.loiter_radius < 0 || guided_WP_loc.loiter_ccw) {
+    if (aparm.loiter_radius < 0 || guided_WP_loc.flags.loiter_ccw) {
         loiter.direction = -1;
     } else {
         loiter.direction = 1;
@@ -108,9 +110,6 @@ void Plane::set_guided_WP(void)
 */
 void Plane::update_home()
 {
-    if (hal.util->was_watchdog_armed()) {
-        return;
-    }
     if ((g2.home_reset_threshold == -1) ||
         ((g2.home_reset_threshold > 0) &&
          (fabsf(barometer.get_altitude()) > g2.home_reset_threshold))) {
@@ -123,26 +122,21 @@ void Plane::update_home()
     if (ahrs.home_is_set() && !ahrs.home_is_locked()) {
         Location loc;
         if(ahrs.get_position(loc)) {
-            if (!AP::ahrs().set_home(loc)) {
-                // silently fail
-            }
+            plane.set_home(loc);
         }
     }
     barometer.update_calibration();
-    ahrs.resetHeightDatum();
 }
 
-bool Plane::set_home_persistently(const Location &loc)
+void Plane::set_home_persistently(const Location &loc)
 {
-    if (hal.util->was_watchdog_armed()) {
-        return false;
-    }
-    if (!AP::ahrs().set_home(loc)) {
-        return false;
-    }
+    set_home(loc);
 
     // Save Home to EEPROM
     mission.write_home_to_storage();
+}
 
-    return true;
+void Plane::set_home(const Location &loc)
+{
+    ahrs.set_home(loc);
 }

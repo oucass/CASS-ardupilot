@@ -158,6 +158,13 @@ const AP_Param::Info Sub::var_info[] = {
     // @User: Standard
     GSCALAR(xtrack_angle_limit,"XTRACK_ANG_LIM", 45),
 
+    // @Param: MAG_ENABLE
+    // @DisplayName: Compass enable/disable
+    // @Description: Setting this to Enabled(1) will enable the compass. Setting this to Disabled(0) will disable the compass
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Standard
+    GSCALAR(compass_enabled,        "MAG_ENABLE",   ENABLED),
+
     // @Param: WP_YAW_BEHAVIOR
     // @DisplayName: Yaw behaviour during missions
     // @Description: Determines how the autopilot controls the yaw during missions and RTL
@@ -475,8 +482,8 @@ const AP_Param::Info Sub::var_info[] = {
 #endif
 
     // @Group: LOG
-    // @Path: ../libraries/AP_Logger/AP_Logger.cpp
-    GOBJECT(logger,           "LOG",  AP_Logger),
+    // @Path: ../libraries/DataFlash/DataFlash.cpp
+    GOBJECT(DataFlash,           "LOG",  DataFlash_Class),
 
     // @Group: BATT
     // @Path: ../libraries/AP_BattMonitor/AP_BattMonitor.cpp
@@ -627,11 +634,6 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Path: ../libraries/RC_Channel/RC_Channels_VarInfo.h
     AP_SUBGROUPINFO(rc_channels, "RC", 17, ParametersG2, RC_Channels),
 
-#ifdef ENABLE_SCRIPTING
-    // Scripting is intentionally not showing up in the parameter docs until it is a more standard feature
-    AP_SUBGROUPINFO(scripting, "SCR_", 18, ParametersG2, AP_Scripting),
-#endif
-
     AP_GROUPEND
 };
 
@@ -650,8 +652,6 @@ const AP_Param::ConversionInfo conversion_table[] = {
     { Parameters::k_param_fs_batt_voltage,   0,      AP_PARAM_FLOAT,  "BATT_LOW_VOLT" },
     { Parameters::k_param_fs_batt_mah,       0,      AP_PARAM_FLOAT,  "BATT_LOW_MAH" },
     { Parameters::k_param_failsafe_battery_enabled,       0,      AP_PARAM_INT8,  "BATT_FS_LOW_ACT" },
-
-    { Parameters::k_param_compass_enabled_deprecated,       0,      AP_PARAM_INT8, "COMPASS_ENABLE" },
 };
 
 void Sub::load_parameters()
@@ -670,7 +670,6 @@ void Sub::load_parameters()
 
         // erase all parameters
         hal.console->printf("Firmware change: erasing EEPROM...\n");
-        StorageManager::erase();
         AP_Param::erase_all();
 
         // save the current format version

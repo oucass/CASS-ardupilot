@@ -3,7 +3,7 @@
  *
  *       AHRS system using DCM matrices
  *
- *       Based on DCM code by Doug Weibel, Jordi Munoz and Jose Julio. DIYDrones.com
+ *       Based on DCM code by Doug Weibel, Jordi Muñoz and Jose Julio. DIYDrones.com
  *
  *       Adapted for the general ArduPilot AHRS interface by Andrew Tridgell
 
@@ -46,21 +46,6 @@ AP_AHRS_DCM::reset_gyro_drift(void)
     _omega_I_sum_time = 0;
 }
 
-
-/* if this was a watchdog reset then get home from backup registers */
-void AP_AHRS_DCM::load_watchdog_home()
-{
-    const AP_HAL::Util::PersistentData &pd = hal.util->persistent_data;
-    if (hal.util->was_watchdog_reset() && (pd.home_lat != 0 || pd.home_lon != 0)) {
-        _home.lat = pd.home_lat;
-        _home.lng = pd.home_lon;
-        _home.set_alt_cm(pd.home_alt_cm, Location::AltFrame::ABSOLUTE);
-        _home_is_set = true;
-        _home_locked = true;
-        gcs().send_text(MAV_SEVERITY_INFO, "Restored watchdog home");
-    }
-}
-
 // run a full DCM update round
 void
 AP_AHRS_DCM::update(bool skip_ins_update)
@@ -72,7 +57,6 @@ AP_AHRS_DCM::update(bool skip_ins_update)
 
     if (_last_startup_ms == 0) {
         _last_startup_ms = AP_HAL::millis();
-        load_watchdog_home();
     }
 
     if (!skip_ins_update) {
@@ -114,19 +98,6 @@ AP_AHRS_DCM::update(bool skip_ins_update)
 
     // update AOA and SSA
     update_AOA_SSA();
-
-    backup_attitude();
-}
-
-/*
-  backup attitude to persistent_data for use in watchdog reset
- */
-void AP_AHRS_DCM::backup_attitude(void)
-{
-    AP_HAL::Util::PersistentData &pd = hal.util->persistent_data;
-    pd.roll_rad = roll;
-    pd.pitch_rad = pitch;
-    pd.yaw_rad = yaw;
 }
 
 // update the DCM matrix using only the gyros
@@ -186,15 +157,7 @@ AP_AHRS_DCM::reset(bool recover_eulers)
     // if the caller wants us to try to recover to the current
     // attitude then calculate the dcm matrix from the current
     // roll/pitch/yaw values
-    if (hal.util->was_watchdog_reset() && AP_HAL::millis() < 10000) {
-        const AP_HAL::Util::PersistentData &pd = hal.util->persistent_data;
-        roll = pd.roll_rad;
-        pitch = pd.pitch_rad;
-        yaw = pd.yaw_rad;
-        _dcm_matrix.from_euler(roll, pitch, yaw);
-        gcs().send_text(MAV_SEVERITY_INFO, "Restored watchdog attitude %.0f %.0f %.0f",
-                        degrees(roll), degrees(pitch), degrees(yaw));
-    } else if (recover_eulers && !isnan(roll) && !isnan(pitch) && !isnan(yaw)) {
+    if (recover_eulers && !isnan(roll) && !isnan(pitch) && !isnan(yaw)) {
         _dcm_matrix.from_euler(roll, pitch, yaw);
     } else {
 
@@ -229,9 +192,6 @@ AP_AHRS_DCM::reset(bool recover_eulers)
 
     }
 
-    if (_last_startup_ms == 0) {
-        load_watchdog_home();
-    }
     _last_startup_ms = AP_HAL::millis();
 }
 
@@ -326,7 +286,7 @@ AP_AHRS_DCM::renorm(Vector3f const &a, Vector3f &result)
  *  to approximations rather than identities. In effect, the axes in the two frames of reference no
  *  longer describe a rigid body. Fortunately, numerical error accumulates very slowly, so it is a
  *  simple matter to stay ahead of it.
- *  We call the process of enforcing the orthogonality conditions: renormalization.
+ *  We call the process of enforcing the orthogonality conditions ÒrenormalizationÓ.
  */
 void
 AP_AHRS_DCM::normalize(void)
@@ -1022,14 +982,14 @@ bool AP_AHRS_DCM::get_position(struct Location &loc) const
     loc.lat = _last_lat;
     loc.lng = _last_lng;
     loc.alt = AP::baro().get_altitude() * 100 + _home.alt;
-    loc.relative_alt = 0;
-    loc.terrain_alt = 0;
-    loc.offset(_position_offset_north, _position_offset_east);
+    loc.flags.relative_alt = 0;
+    loc.flags.terrain_alt = 0;
+    location_offset(loc, _position_offset_north, _position_offset_east);
     const AP_GPS &_gps = AP::gps();
     if (_flags.fly_forward && _have_position) {
         float gps_delay_sec = 0;
         _gps.get_lag(gps_delay_sec);
-        loc.offset_bearing(_gps.ground_course_cd() * 0.01f, _gps.ground_speed() * gps_delay_sec);
+        location_update(loc, _gps.ground_course_cd() * 0.01f, _gps.ground_speed() * gps_delay_sec);
     }
     return _have_position;
 }
@@ -1071,38 +1031,18 @@ bool AP_AHRS_DCM::airspeed_estimate(float *airspeed_ret) const
     return ret;
 }
 
-bool AP_AHRS_DCM::set_home(const Location &loc)
+void AP_AHRS_DCM::set_home(const Location &loc)
 {
-    // check location is valid
-    if (loc.lat == 0 && loc.lng == 0 && loc.alt == 0) {
-        return false;
-    }
-    if (!loc.check_latlng()) {
-        return false;
-    }
-    // home must always be global frame at the moment as .alt is
-    // accessed directly by the vehicles and they may not be rigorous
-    // in checking the frame type.
-    Location tmp = loc;
-    if (!tmp.change_alt_frame(Location::AltFrame::ABSOLUTE)) {
-        return false;
-    }
-
-    _home = tmp;
+    _home = loc;
+    _home.options = 0;
     _home_is_set = true;
 
+    // log ahrs home and ekf origin dataflash
     Log_Write_Home_And_Origin();
 
     // send new home and ekf origin to GCS
-    gcs().send_message(MSG_HOME);
-    gcs().send_message(MSG_ORIGIN);
-
-    AP_HAL::Util::PersistentData &pd = hal.util->persistent_data;
-    pd.home_lat = loc.lat;
-    pd.home_lon = loc.lng;
-    pd.home_alt_cm = loc.alt;
-
-    return true;
+    gcs().send_home();
+    gcs().send_ekf_origin();
 }
 
 //  a relative ground position to home in meters, Down
@@ -1121,15 +1061,12 @@ bool AP_AHRS_DCM::healthy(void) const
 }
 
 /*
-  return NED velocity if we have GPS lock
+  return amount of time that AHRS has been up
  */
-bool AP_AHRS_DCM::get_velocity_NED(Vector3f &vec) const
+uint32_t AP_AHRS_DCM::uptime_ms(void) const
 {
-    const AP_GPS &_gps = AP::gps();
-    if (_gps.status() < AP_GPS::GPS_OK_FIX_3D) {
-        return false;
+    if (_last_startup_ms == 0) {
+        return 0;
     }
-    vec = _gps.velocity();
-    return true;
+    return AP_HAL::millis() - _last_startup_ms;
 }
-

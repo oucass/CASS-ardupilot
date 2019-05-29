@@ -25,14 +25,10 @@
 #include <AP_HAL_ChibiOS/RCOutput.h>
 #include "analog.h"
 #include "rc.h"
-#include <AP_HAL_ChibiOS/hwdef/common/watchdog.h>
 
 extern const AP_HAL::HAL &hal;
 
-// we build this file with optimisation to lower the interrupt
-// latency. This helps reduce the chance of losing an RC input byte
-// due to missing a UART interrupt
-#pragma GCC optimize("O3")
+//#pragma GCC optimize("Og")
 
 static AP_IOMCU_FW iomcu;
 
@@ -40,9 +36,6 @@ void setup();
 void loop();
 
 const AP_HAL::HAL& hal = AP_HAL::get_HAL();
-
-// enable testing of IOMCU watchdog using safety switch
-#define IOMCU_ENABLE_WATCHDOG_TEST 0
 
 // pending events on the main thread
 enum ioevents {
@@ -180,11 +173,6 @@ void AP_IOMCU_FW::init()
 
     // we do no allocations after setup completes
     reg_status.freemem = hal.util->available_memory();
-
-    if (hal.util->was_watchdog_safety_off()) {
-        hal.rcout->force_safety_off();
-        reg_status.flag_safety_off = true;
-    }
 }
 
 
@@ -211,7 +199,6 @@ void AP_IOMCU_FW::update()
     }
 
     uint32_t now = last_ms;
-    reg_status.timestamp_ms = last_ms;
 
     // output SBUS if enabled
     if ((reg_setup.features & P_SETUP_FEATURES_SBUS1_OUT) &&
@@ -348,11 +335,10 @@ void AP_IOMCU_FW::process_io_packet()
         calc_crc = crc_crc8((const uint8_t *)&rx_io_packet, pkt_size);
     }
     if (rx_crc != calc_crc || rx_io_packet.count > PKT_MAX_REGS) {
+        memset(&tx_io_packet, 0xFF, sizeof(tx_io_packet));
         tx_io_packet.count = 0;
         tx_io_packet.code = CODE_CORRUPT;
         tx_io_packet.crc = 0;
-        tx_io_packet.page = 0;
-        tx_io_packet.offset = 0;
         tx_io_packet.crc =  crc_crc8((const uint8_t *)&tx_io_packet, tx_io_packet.get_size());
         stats.num_bad_crc++;
         return;
@@ -361,11 +347,10 @@ void AP_IOMCU_FW::process_io_packet()
     case CODE_READ: {
         stats.num_code_read++;
         if (!handle_code_read()) {
+            memset(&tx_io_packet, 0xFF, sizeof(tx_io_packet));
             tx_io_packet.count = 0;
             tx_io_packet.code = CODE_ERROR;
             tx_io_packet.crc = 0;
-            tx_io_packet.page = 0;
-            tx_io_packet.offset = 0;
             tx_io_packet.crc =  crc_crc8((const uint8_t *)&tx_io_packet, tx_io_packet.get_size());
         }
     }
@@ -373,11 +358,10 @@ void AP_IOMCU_FW::process_io_packet()
     case CODE_WRITE: {
         stats.num_write_pkt++;
         if (!handle_code_write()) {
+            memset(&tx_io_packet, 0xFF, sizeof(tx_io_packet));
             tx_io_packet.count = 0;
             tx_io_packet.code = CODE_ERROR;
             tx_io_packet.crc = 0;
-            tx_io_packet.page = 0;
-            tx_io_packet.offset = 0;
             tx_io_packet.crc =  crc_crc8((const uint8_t *)&tx_io_packet, tx_io_packet.get_size());
         }
     }
@@ -387,6 +371,8 @@ void AP_IOMCU_FW::process_io_packet()
     }
     break;
     }
+    rx_io_last = rx_io_packet;
+    memset((void *)&rx_io_packet, 0x42, sizeof(rx_io_packet));
 }
 
 /*
@@ -610,11 +596,10 @@ bool AP_IOMCU_FW::handle_code_write()
     default:
         break;
     }
+    memset(&tx_io_packet, 0xFF, sizeof(tx_io_packet));
     tx_io_packet.count = 0;
     tx_io_packet.code = CODE_SUCCESS;
     tx_io_packet.crc = 0;
-    tx_io_packet.page = 0;
-    tx_io_packet.offset = 0;
     tx_io_packet.crc =  crc_crc8((const uint8_t *)&tx_io_packet, tx_io_packet.get_size());
     return true;
 }
@@ -670,28 +655,7 @@ void AP_IOMCU_FW::safety_update(void)
     if (safety_button_counter == 10) {
         // safety has been pressed for 1 second, change state
         reg_status.flag_safety_off = !reg_status.flag_safety_off;
-        if (reg_status.flag_safety_off) {
-            hal.rcout->force_safety_off();
-        } else {
-            hal.rcout->force_safety_on();
-        }
     }
-
-#if IOMCU_ENABLE_WATCHDOG_TEST
-    if (safety_button_counter == 50) {
-        // deliberate lockup of IOMCU on 5s button press, for testing
-        // watchdog
-        while (true) {
-            hal.scheduler->delay(50);
-            palToggleLine(HAL_GPIO_PIN_SAFETY_LED);
-            if (palReadLine(HAL_GPIO_PIN_SAFETY_INPUT)) {
-                // only trigger watchdog on button release, so we
-                // don't end up stuck in the bootloader
-                stm32_watchdog_pat();
-            }
-        }
-    }
-#endif
 
     led_counter = (led_counter+1) % 16;
     const uint16_t led_pattern = reg_status.flag_safety_off?0xFFFF:0x5500;

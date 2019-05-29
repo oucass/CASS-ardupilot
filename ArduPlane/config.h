@@ -59,15 +59,6 @@
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
-// Advanced Failsafe support
-//
-
-#ifndef ADVANCED_FAILSAFE
- # define ADVANCED_FAILSAFE ENABLED
-#endif
-
-
-//////////////////////////////////////////////////////////////////////////////
 // Optical flow sensor support
 //
 
@@ -113,22 +104,22 @@
 #endif
 
 #if !defined(FLIGHT_MODE_1)
- # define FLIGHT_MODE_1                  Mode::Number::RTL
+ # define FLIGHT_MODE_1                  RTL
 #endif
 #if !defined(FLIGHT_MODE_2)
- # define FLIGHT_MODE_2                  Mode::Number::RTL
+ # define FLIGHT_MODE_2                  RTL
 #endif
 #if !defined(FLIGHT_MODE_3)
- # define FLIGHT_MODE_3                  Mode::Number::FLY_BY_WIRE_A
+ # define FLIGHT_MODE_3                  FLY_BY_WIRE_A
 #endif
 #if !defined(FLIGHT_MODE_4)
- # define FLIGHT_MODE_4                  Mode::Number::FLY_BY_WIRE_A
+ # define FLIGHT_MODE_4                  FLY_BY_WIRE_A
 #endif
 #if !defined(FLIGHT_MODE_5)
- # define FLIGHT_MODE_5                  Mode::Number::MANUAL
+ # define FLIGHT_MODE_5                  MANUAL
 #endif
 #if !defined(FLIGHT_MODE_6)
- # define FLIGHT_MODE_6                  Mode::Number::MANUAL
+ # define FLIGHT_MODE_6                  MANUAL
 #endif
 
 
@@ -271,7 +262,7 @@
 //////////////////////////////////////////////////////////////////////////////
 
 //////////////////////////////////////////////////////////////////////////////
-// Logging control
+// Dataflash logging control
 //
 
 #ifndef LOGGING_ENABLED
@@ -299,6 +290,10 @@
 
 #ifndef USE_CURRENT_ALT
  # define USE_CURRENT_ALT FALSE
+#endif
+
+#ifndef PX4IO_OVERRIDE_PWM
+ # define PX4IO_OVERRIDE_PWM 1750
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -334,7 +329,11 @@
 #endif
 
 #ifndef HIL_SUPPORT
-# define HIL_SUPPORT !HAL_MINIMIZE_FEATURES
+#if HAL_MINIMIZE_FEATURES
+# define HIL_SUPPORT DISABLED
+#else
+# define HIL_SUPPORT ENABLED
+#endif
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -346,7 +345,17 @@
 //////////////////////////////////////////////////////////////////////////////
 // Payload Gripper
 #ifndef GRIPPER_ENABLED
-  #define GRIPPER_ENABLED !HAL_MINIMIZE_FEATURES
+ #if HAL_MINIMIZE_FEATURES
+  # define GRIPPER_ENABLED DISABLED
+ #else 
+  # define GRIPPER_ENABLED ENABLED
+ #endif
+#endif
+
+#if CONFIG_HAL_BOARD == HAL_BOARD_PX4 && !defined(CONFIG_ARCH_BOARD_PX4FMU_V4)
+# define HAVE_PX4_MIXER 1
+#else
+# define HAVE_PX4_MIXER 0
 #endif
 
 #ifndef STATS_ENABLED
@@ -354,7 +363,11 @@
 #endif
 
 #ifndef DEVO_TELEM_ENABLED
- #define DEVO_TELEM_ENABLED !HAL_MINIMIZE_FEATURES
+#if HAL_MINIMIZE_FEATURES
+ #define DEVO_TELEM_ENABLED DISABLED
+#else
+ #define DEVO_TELEM_ENABLED ENABLED
+#endif
 #endif
 
 #ifndef OSD_ENABLED
@@ -362,7 +375,11 @@
 #endif
 
 #ifndef SOARING_ENABLED
- #define SOARING_ENABLED !HAL_MINIMIZE_FEATURES
+#if HAL_MINIMIZE_FEATURES
+ #define SOARING_ENABLED DISABLED
+#else
+ #define SOARING_ENABLED ENABLED
+#endif
 #endif
 
 #ifndef LANDING_GEAR_ENABLED

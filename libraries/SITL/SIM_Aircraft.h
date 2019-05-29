@@ -26,8 +26,6 @@
 #include "SIM_Sprayer.h"
 #include "SIM_Gripper_Servo.h"
 #include "SIM_Gripper_EPM.h"
-#include "SIM_Parachute.h"
-#include "SIM_Precland.h"
 
 namespace SITL {
 
@@ -110,14 +108,9 @@ public:
         attitude.from_rotation_matrix(dcm);
     }
 
-    const Location &get_home() const { return home; }
-    float get_home_yaw() const { return home_yaw; }
-
     void set_sprayer(Sprayer *_sprayer) { sprayer = _sprayer; }
-    void set_parachute(Parachute *_parachute) { parachute = _parachute; }
     void set_gripper_servo(Gripper_Servo *_gripper) { gripper = _gripper; }
     void set_gripper_epm(Gripper_EPM *_gripper_epm) { gripper_epm = _gripper_epm; }
-    void set_precland(SIM_Precland *_precland);
 
 protected:
     SITL *sitl;
@@ -149,12 +142,6 @@ protected:
     float rcin[8];
     float range = -1.0f;                 // rangefinder detection in m
 
-    struct {
-        // data from simulated laser scanner, if available
-        struct vector3f_array points;
-        struct float_array ranges;
-    } scanner;
-    
     // Wind Turbulence simulated Data
     float turbulence_azimuth = 0.0f;
     float turbulence_horizontal_speed = 0.0f;  // m/s
@@ -181,7 +168,7 @@ protected:
     // allow for AHRS_ORIENTATION
     AP_Int8 *ahrs_orientation;
 
-    enum GroundBehaviour {
+    enum {
         GROUND_BEHAVIOR_NONE = 0,
         GROUND_BEHAVIOR_NO_MOVEMENT,
         GROUND_BEHAVIOR_FWD_ONLY,
@@ -243,9 +230,6 @@ protected:
     // update external payload/sensor dynamic
     void update_external_payload(const struct sitl_input &input);
 
-    void add_shove_forces(Vector3f &rot_accel, Vector3f &body_accel);
-    void add_twist_forces(Vector3f &rot_accel);
-
 private:
     uint64_t last_time_us = 0;
     uint32_t frame_counter = 0;
@@ -268,8 +252,6 @@ private:
     Sprayer *sprayer;
     Gripper_Servo *gripper;
     Gripper_EPM *gripper_epm;
-    Parachute *parachute;
-    SIM_Precland *precland;
 };
 
 } // namespace SITL

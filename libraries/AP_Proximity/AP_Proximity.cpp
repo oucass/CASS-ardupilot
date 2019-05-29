@@ -21,7 +21,6 @@
 #include "AP_Proximity_RangeFinder.h"
 #include "AP_Proximity_MAV.h"
 #include "AP_Proximity_SITL.h"
-#include "AP_Proximity_MorseSITL.h"
 
 extern const AP_HAL::HAL &hal;
 
@@ -32,7 +31,7 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
     // @Param: _TYPE
     // @DisplayName: Proximity type
     // @Description: What type of proximity sensor is connected
-    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder,5:RPLidarA2,6:TeraRangerTowerEvo,10:SITL,11:MorseSITL
+    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder,5:RPLidarA2,6:TeraRangerTowerEvo
     // @RebootRequired: True
     // @User: Standard
     AP_GROUPINFO("_TYPE",   1, AP_Proximity, _type[0], 0),
@@ -50,7 +49,7 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
     // @Units: deg
     // @Range: -180 180
     // @User: Standard
-    AP_GROUPINFO("_YAW_CORR", 3, AP_Proximity, _yaw_correction[0], 0),
+    AP_GROUPINFO("_YAW_CORR", 3, AP_Proximity, _yaw_correction[0], PROXIMITY_YAW_CORRECTION_DEFAULT),
 
     // @Param: _IGN_ANG1
     // @DisplayName: Proximity sensor ignore angle 1
@@ -170,7 +169,7 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
     // @Units: deg
     // @Range: -180 180
     // @User: Standard
-    AP_GROUPINFO("2_YAW_CORR", 18, AP_Proximity, _yaw_correction[1], 0),
+    AP_GROUPINFO("2_YAW_CORR", 18, AP_Proximity, _yaw_correction[1], PROXIMITY_YAW_CORRECTION_DEFAULT),
 #endif
 
     AP_GROUPEND
@@ -325,11 +324,6 @@ void AP_Proximity::detect_instance(uint8_t instance)
         drivers[instance] = new AP_Proximity_SITL(*this, state[instance]);
         return;
     }
-    if (type == Proximity_Type_MorseSITL) {
-        state[instance].instance = instance;
-        drivers[instance] = new AP_Proximity_MorseSITL(*this, state[instance]);
-        return;
-    }
 #endif
 }
 
@@ -465,12 +459,3 @@ bool AP_Proximity::sensor_failed() const
 }
 
 AP_Proximity *AP_Proximity::_singleton;
-
-namespace AP {
-
-AP_Proximity *proximity()
-{
-    return AP_Proximity::get_singleton();
-}
-
-}

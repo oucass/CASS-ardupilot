@@ -7,7 +7,7 @@
 #include <AP_Param/AP_Param.h>
 #include <stdlib.h>
 #include <cmath>
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 
 #define AC_PID_FILT_HZ_DEFAULT  20.0f   // default input filter frequency
 #define AC_PID_FILT_HZ_MIN      0.01f   // minimum input filter frequency
@@ -40,7 +40,7 @@ public:
     float       get_i();
     float       get_d();
     float       get_ff(float requested_rate);
-
+    
     // reset_I - reset the integrator
     void        reset_I();
 
@@ -80,7 +80,7 @@ public:
     void        set_desired_rate(float desired) { _pid_info.desired = desired; }
     void        set_actual_rate(float actual) { _pid_info.actual = actual; }
 
-    const       AP_Logger::PID_Info& get_pid_info(void) const { return _pid_info; }
+    const       DataFlash_Class::PID_Info& get_pid_info(void) const { return _pid_info; }
 
     // parameter var table
     static const struct AP_Param::GroupInfo        var_info[];
@@ -106,5 +106,5 @@ protected:
     float           _input;                 // last input for derivative
     float           _derivative;            // last derivative for low-pass filter
 
-    AP_Logger::PID_Info        _pid_info;
+    DataFlash_Class::PID_Info        _pid_info;
 };

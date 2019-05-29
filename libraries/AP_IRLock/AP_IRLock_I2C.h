@@ -5,7 +5,6 @@
 #pragma once
 
 #include "IRLock.h"
-#include <AP_HAL/AP_HAL.h>
 
 class AP_IRLock_I2C : public IRLock
 {

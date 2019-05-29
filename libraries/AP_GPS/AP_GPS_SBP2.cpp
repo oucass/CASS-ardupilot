@@ -22,7 +22,7 @@
 
 #include "AP_GPS.h"
 #include "AP_GPS_SBP2.h"
-#include <AP_Logger/AP_Logger.h>
+#include <DataFlash/DataFlash.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <GCS_MAVLink/GCS.h>
 
@@ -184,27 +184,22 @@ AP_GPS_SBP2::_sbp_process_message() {
 
         case SBP_GPS_TIME_MSGTYPE:
             memcpy(&last_gps_time, parser_state.msg_buff, sizeof(struct sbp_gps_time_t));
-            check_new_itow(last_gps_time.tow, parser_state.msg_len);
             break;
 
         case SBP_VEL_NED_MSGTYPE:
             memcpy(&last_vel_ned, parser_state.msg_buff, sizeof(struct sbp_vel_ned_t));
-            check_new_itow(last_vel_ned.tow, parser_state.msg_len);
             break;
 
         case SBP_POS_LLH_MSGTYPE:
             memcpy(&last_pos_llh, parser_state.msg_buff, sizeof(struct sbp_pos_llh_t));
-            check_new_itow(last_pos_llh.tow, parser_state.msg_len);
             break;
 
         case SBP_DOPS_MSGTYPE:
             memcpy(&last_dops, parser_state.msg_buff, sizeof(struct sbp_dops_t));
-            check_new_itow(last_dops.tow, parser_state.msg_len);
             break;
 
         case SBP_EXT_EVENT_MSGTYPE:
             memcpy(&last_event, parser_state.msg_buff, sizeof(struct sbp_ext_event_t));
-            check_new_itow(last_event.tow, parser_state.msg_len);
             logging_ext_event();
             break;
 
@@ -213,7 +208,7 @@ AP_GPS_SBP2::_sbp_process_message() {
     }
 
     // send all messages we receive to log, even if it's an unsupported message,
-    // so we can do additional post-processing from logs.
+    // so we can do additional post-processing from Dataflash logs.
     // The log mask will be used to adjust or suppress logging
     logging_log_raw_sbp(parser_state.msg_type, parser_state.sender_id, parser_state.msg_len, parser_state.msg_buff);
 }
@@ -271,14 +266,14 @@ AP_GPS_SBP2::_attempt_state_update()
         //
         // Check Flags for Valid Messages
         //
-        if (last_gps_time.flags.time_src    == 0 ||
-            last_vel_ned.flags.vel_mode     == 0 ||
+        if (last_gps_time.flags.fix_mode    == 0 ||
+            last_vel_ned.flags.fix_mode     == 0 ||
             last_pos_llh.flags.fix_mode     == 0 ||
             last_dops.flags.fix_mode        == 0) {
 
             Debug("Message Marked as Invalid. NO FIX! Flags: {GPS_TIME: %d, VEL_NED: %d, POS_LLH: %d, DOPS: %d}",
-                   last_gps_time.flags.time_src,
-                   last_vel_ned.flags.vel_mode,
+                   last_gps_time.flags.fix_mode,
+                   last_vel_ned.flags.fix_mode,
                    last_pos_llh.flags.fix_mode,
                    last_dops.flags.fix_mode);
 
@@ -440,7 +435,7 @@ AP_GPS_SBP2::_detect(struct SBP2_detect_state &state, uint8_t data)
 void
 AP_GPS_SBP2::logging_log_full_update()
 {
-    if (!should_log()) {
+    if (!should_df_log()) {
       return;
     }
 
@@ -454,7 +449,7 @@ AP_GPS_SBP2::logging_log_full_update()
         last_injected_data_ms      : last_injected_data_ms,
         last_iar_num_hypotheses    : 0,
     };
-    AP::logger().WriteBlock(&pkt, sizeof(pkt));
+    DataFlash_Class::instance()->WriteBlock(&pkt, sizeof(pkt));
 };
 
 void
@@ -462,7 +457,7 @@ AP_GPS_SBP2::logging_log_raw_sbp(uint16_t msg_type,
         uint16_t sender_id,
         uint8_t msg_len,
         uint8_t *msg_buff) {
-    if (!should_log()) {
+    if (!should_df_log()) {
       return;
     }
 
@@ -488,7 +483,7 @@ AP_GPS_SBP2::logging_log_raw_sbp(uint16_t msg_type,
         msg_len         : msg_len,
     };
     memcpy(pkt.data, msg_buff, MIN(msg_len, 48));
-    AP::logger().WriteBlock(&pkt, sizeof(pkt));
+    DataFlash_Class::instance()->WriteBlock(&pkt, sizeof(pkt));
 
     for (uint8_t i = 0; i < pages - 1; i++) {
         struct log_SbpRAWM pkt2 = {
@@ -501,13 +496,13 @@ AP_GPS_SBP2::logging_log_raw_sbp(uint16_t msg_type,
             msg_len         : msg_len,
         };
         memcpy(pkt2.data, &msg_buff[48 + i * 104], MIN(msg_len - (48 + i * 104), 104));
-        AP::logger().WriteBlock(&pkt2, sizeof(pkt2));
+        DataFlash_Class::instance()->WriteBlock(&pkt2, sizeof(pkt2));
     }
 };
 
 void
 AP_GPS_SBP2::logging_ext_event() {
-    if (!should_log()) {
+    if (!should_df_log()) {
       return;
     }
 
@@ -520,5 +515,5 @@ AP_GPS_SBP2::logging_ext_event() {
         level              : last_event.flags.level,
         quality            : last_event.flags.quality,
     };
-    AP::logger().WriteBlock(&pkt, sizeof(pkt));
+    DataFlash_Class::instance()->WriteBlock(&pkt, sizeof(pkt));
 };
