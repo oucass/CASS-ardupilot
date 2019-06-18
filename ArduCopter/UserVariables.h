@@ -7,6 +7,7 @@
 #define LOG_IMET_MSG 0x29 // SD Card Memory Direction for Temp sensor
 #define LOG_RH_MSG 0x30 // SD Card Memory Direction for RH sensor
 #define LOG_WIND_MSG 0x31 //SD Card Memory Direction for our Wind estimation
+#define LOG_O3_MSG 0x32
 
 struct PACKED log_RH {
     LOG_PACKET_HEADER;
@@ -41,6 +42,13 @@ struct PACKED log_IMET {
     float resist2;
     float resist3;
     float resist4;
+};
+
+struct PACKED log_O3 {
+    LOG_PACKET_HEADER;
+    uint64_t time_stamp;
+    uint8_t healthy;
+    float ozone;
 };
 
 struct PACKED log_WIND {

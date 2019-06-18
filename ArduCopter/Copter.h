@@ -82,6 +82,7 @@
 // CASS libraries declaration
 #include <AC_CASS_IMET/AC_CASS_Imet.h>
 #include <AC_CASS_HYT271/AC_CASS_HYT271.h>
+#include <AC_CASS_03/AC_CASS_03.h>
 
 // Configuration
 #include "defines.h"
@@ -180,6 +181,19 @@
 #include <SITL/SITL.h>
 #endif
 
+#if FRAME_CONFIG == HELI_FRAME
+    #define AC_AttitudeControl_t AC_AttitudeControl_Heli
+#else
+    #define AC_AttitudeControl_t AC_AttitudeControl_Multi
+#endif
+
+#if FRAME_CONFIG == HELI_FRAME
+ #define MOTOR_CLASS AP_MotorsHeli
+#else
+ #define MOTOR_CLASS AP_MotorsMulticopter
+#endif
+
+#include "mode.h"
 
 class Copter : public AP_HAL::HAL::Callbacks {
 public:
@@ -197,6 +211,33 @@ public:
     friend class ToyMode;
     friend class RC_Channel_Copter;
     friend class RC_Channels_Copter;
+
+    friend class AutoTune;
+
+    friend class Mode;
+    friend class ModeAcro;
+    friend class ModeAcro_Heli;
+    friend class ModeAltHold;
+    friend class ModeAuto;
+    friend class ModeAutoTune;
+    friend class ModeAvoidADSB;
+    friend class ModeBrake;
+    friend class ModeCircle;
+    friend class ModeDrift;
+    friend class ModeFlip;
+    friend class ModeFlowHold;
+    friend class ModeFollow;
+    friend class ModeGuided;
+    friend class ModeLand;
+    friend class ModeLoiter;
+    friend class ModePosHold;
+    friend class ModeRTL;
+    friend class ModeSmartRTL;
+    friend class ModeSport;
+    friend class ModeStabilize;
+    friend class ModeStabilize_Heli;
+    friend class ModeThrow;
+    friend class ModeZigZag;
 
     Copter(void);
 
@@ -242,7 +283,9 @@ private:
     AP_InertialSensor ins;
 
     // Imet Temperature sensors class declaration
-    AC_CASS_Imet CASS_Imet[4]; 
+    AC_CASS_Imet CASS_Imet[4];
+    // O3 sensors class declaration
+    AC_CASS_03 CASS_O3; 
     // HYT271 humidity sensors class declaration
     AC_CASS_HYT271 CASS_HYT271[4];
 
@@ -383,12 +426,6 @@ private:
     } sensor_health;
 
     // Motor Output
-#if FRAME_CONFIG == HELI_FRAME
- #define MOTOR_CLASS AP_MotorsHeli
-#else
- #define MOTOR_CLASS AP_MotorsMulticopter
-#endif
-
     MOTOR_CLASS *motors;
     const struct AP_Param::GroupInfo *motors_var_info;
 
@@ -437,11 +474,6 @@ private:
 
     // Attitude, Position and Waypoint navigation objects
     // To-Do: move inertial nav up or other navigation variables down here
-#if FRAME_CONFIG == HELI_FRAME
-    #define AC_AttitudeControl_t AC_AttitudeControl_Heli
-#else
-    #define AC_AttitudeControl_t AC_AttitudeControl_Multi
-#endif
     AC_AttitudeControl_t *attitude_control;
     AC_PosControl *pos_control;
     AC_WPNav *wp_nav;
@@ -855,16 +887,16 @@ private:
     // CASS Mavlink message
     void send_cass_imet(mavlink_channel_t chan);
     void send_cass_hyt271(mavlink_channel_t chan);
+    void send_cass_O3(mavlink_channel_t chan);
 
     // CASS Libraries sensor code initilizer
     void init_CASS_imet(void);
     void init_CASS_hyt271(void);  
+    void init_CASS_O3(void);
 
 #if OSD_ENABLED == ENABLED
     void publish_osd_info();
 #endif
-
-#include "mode.h"
 
     Mode *flightmode;
 #if MODE_ACRO_ENABLED == ENABLED

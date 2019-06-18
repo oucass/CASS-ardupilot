@@ -102,7 +102,7 @@ public:
 
 private:
     AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev;
-    AP_HAL::Semaphore *sem;
+    HAL_Semaphore _sem; // semaphore for access to shared frontend data
     bool flag;  //toggles between voltage and current measurements
     float coeff[3]; //sensor coefficients
     float adc_thermistor, adc_source;   //voltage source and thermistor form ADC

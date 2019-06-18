@@ -21,7 +21,7 @@ public:
 
 private:
     AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev;
-    AP_HAL::Semaphore *sem;
+    HAL_Semaphore _sem; // semaphore for access to shared frontend data
     float _temperature; // degrees K
     float _humidity; //voltage read by the ADC
     bool _healthy; // we have a valid temperature reading to report

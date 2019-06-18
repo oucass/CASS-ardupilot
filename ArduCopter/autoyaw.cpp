@@ -1,9 +1,9 @@
 #include "Copter.h"
 
-Copter::Mode::AutoYaw Copter::Mode::auto_yaw;
+Mode::AutoYaw Mode::auto_yaw;
 
 // roi_yaw - returns heading towards location held in roi
-float Copter::Mode::AutoYaw::roi_yaw()
+float Mode::AutoYaw::roi_yaw()
 {
     roi_yaw_counter++;
     if (roi_yaw_counter >= 4) {
@@ -14,7 +14,7 @@ float Copter::Mode::AutoYaw::roi_yaw()
     return _roi_yaw;
 }
 
-float Copter::Mode::AutoYaw::look_ahead_yaw()
+float Mode::AutoYaw::look_ahead_yaw()
 {
     const Vector3f& vel = copter.inertial_nav.get_velocity();
     float speed = norm(vel.x,vel.y);
@@ -25,14 +25,51 @@ float Copter::Mode::AutoYaw::look_ahead_yaw()
     return _look_ahead_yaw;
 }
 
-void Copter::Mode::AutoYaw::set_mode_to_default(bool rtl)
+// CASS wind function that sends latest wind estimation to the autopilot
+// It will only track the wind if its horizontally stationary 
+float Mode::AutoYaw::turn_into_wind()
+{
+    float speed = copter.inertial_nav.get_speed_xy(); // cm/s
+    float dist_to_wp = copter.wp_nav->get_wp_distance_to_destination(); // cm (horizontally)
+    if(copter.position_ok()){
+        if(speed < 110.0f && dist_to_wp < 300){
+            _wind_yaw = copter.cass_wind_direction;
+        } else {
+            _wind_yaw = copter.wp_nav->get_yaw();
+        }
+    }
+    return _wind_yaw;
+}
+
+float Mode::AutoYaw::turn_into_wind_CT2()
+{
+    float _wind_dir = copter.cass_wind_direction;      // Estimated wind direction in centi-degrees
+    float _wind_spd = copter.cass_wind_speed;           // Estimated wind speed in m/s
+    float _xy_speed = copter.wp_nav->get_default_speed_xy();    // Copters target speed in cm/s
+    float _wp_bearing = copter.wp_nav->get_yaw();       // Bearing for the next waypoint in centi-degrees
+    float w_x, w_y, s_x, s_y;
+    if(copter.position_ok()){
+        if (copter.wp_nav->reached_wp_destination() || fabs(copter.inertial_nav.get_velocity_z()) > 80){
+            _wind_CT2_yaw = _wind_dir;
+        } else {
+            s_x = _xy_speed*sinf(_wp_bearing*1.745e-4f);
+            s_y = _xy_speed*cosf(_wp_bearing*1.745e-4f);
+            w_x = 100*_wind_spd*sinf(_wind_dir*1.745e-4f);
+            w_y = 100*_wind_spd*cosf(_wind_dir*1.745e-4f);
+            _wind_CT2_yaw = wrap_360_cd(atan2f((s_x + w_x),(s_y + w_y))*5729.6f);
+        }
+    }
+    return _wind_CT2_yaw;
+}
+
+void Mode::AutoYaw::set_mode_to_default(bool rtl)
 {
     set_mode(default_mode(rtl));
 }
 
 // default_mode - returns auto_yaw.mode() based on WP_YAW_BEHAVIOR parameter
 // set rtl parameter to true if this is during an RTL
-autopilot_yaw_mode Copter::Mode::AutoYaw::default_mode(bool rtl) const
+autopilot_yaw_mode Mode::AutoYaw::default_mode(bool rtl) const
 {
     switch (copter.g.wp_yaw_behavior) {
 
@@ -49,6 +86,14 @@ autopilot_yaw_mode Copter::Mode::AutoYaw::default_mode(bool rtl) const
     case WP_YAW_BEHAVIOR_LOOK_AHEAD:
         return AUTO_YAW_LOOK_AHEAD;
 
+    //CASS implementation of wind tracker for vertical profiles
+    case WP_YAW_BEHAVIOR_INTO_WIND:
+        return AUTO_YAW_INTO_WIND;
+
+    //CASS implementation of wind tracker for CT2 profiles
+    case WP_YAW_BEHAVIOR_WIND_CT2:
+        return AUTO_YAW_WIND_CT2;
+
     case WP_YAW_BEHAVIOR_LOOK_AT_NEXT_WP:
     default:
         return AUTO_YAW_LOOK_AT_NEXT_WP;
@@ -56,7 +101,7 @@ autopilot_yaw_mode Copter::Mode::AutoYaw::default_mode(bool rtl) const
 }
 
 // set_mode - sets the yaw mode for auto
-void Copter::Mode::AutoYaw::set_mode(autopilot_yaw_mode yaw_mode)
+void Mode::AutoYaw::set_mode(autopilot_yaw_mode yaw_mode)
 {
     // return immediately if no change
     if (_mode == yaw_mode) {
@@ -94,11 +139,20 @@ void Copter::Mode::AutoYaw::set_mode(autopilot_yaw_mode yaw_mode)
         // initialise target yaw rate to zero
         _rate_cds = 0.0f;
         break;
+
+    case AUTO_YAW_INTO_WIND:
+        // CASS: initialise target _wind_yaw on boot-up
+        _wind_yaw = copter.ahrs.yaw_sensor;
+        break;
+    case AUTO_YAW_WIND_CT2:
+        // CASS: initialise target _wind_CT2_yaw on boot-up
+        _wind_CT2_yaw = copter.ahrs.yaw_sensor;
+        break;
     }
 }
 
 // set_fixed_yaw - sets the yaw look at heading for auto mode
-void Copter::Mode::AutoYaw::set_fixed_yaw(float angle_deg, float turn_rate_dps, int8_t direction, bool relative_angle)
+void Mode::AutoYaw::set_fixed_yaw(float angle_deg, float turn_rate_dps, int8_t direction, bool relative_angle)
 {
     const int32_t curr_yaw_target = copter.attitude_control->get_att_target_euler_cd().z;
 
@@ -130,7 +184,7 @@ void Copter::Mode::AutoYaw::set_fixed_yaw(float angle_deg, float turn_rate_dps, 
 }
 
 // set_roi - sets the yaw to look at roi for auto mode
-void Copter::Mode::AutoYaw::set_roi(const Location &roi_location)
+void Mode::AutoYaw::set_roi(const Location &roi_location)
 {
     // if location is zero lat, lon and altitude turn off ROI
     if (roi_location.alt == 0 && roi_location.lat == 0 && roi_location.lng == 0) {
@@ -169,14 +223,14 @@ void Copter::Mode::AutoYaw::set_roi(const Location &roi_location)
 }
 
 // set auto yaw rate in centi-degrees per second
-void Copter::Mode::AutoYaw::set_rate(float turn_rate_cds)
+void Mode::AutoYaw::set_rate(float turn_rate_cds)
 {
     set_mode(AUTO_YAW_RATE);
     _rate_cds = turn_rate_cds;
 }
 
 // yaw - returns target heading depending upon auto_yaw.mode()
-float Copter::Mode::AutoYaw::yaw()
+float Mode::AutoYaw::yaw()
 {
     switch (_mode) {
 
@@ -197,6 +251,14 @@ float Copter::Mode::AutoYaw::yaw()
         // changes yaw to be same as when quad was armed
         return copter.initial_armed_bearing;
 
+    case AUTO_YAW_INTO_WIND:
+        // CASS implementation of wind tracker, send estimated wind dir = yaw command to autopilot
+        return turn_into_wind();
+    
+    case AUTO_YAW_WIND_CT2:
+        // CASS implementation of wind CT2 tracker, send optimal heading = yaw command to autopilot
+        return turn_into_wind_CT2();
+
     case AUTO_YAW_LOOK_AT_NEXT_WP:
     default:
         // point towards next waypoint.
@@ -207,7 +269,7 @@ float Copter::Mode::AutoYaw::yaw()
 
 // returns yaw rate normally set by SET_POSITION_TARGET mavlink
 // messages (positive is clockwise, negative is counter clockwise)
-float Copter::Mode::AutoYaw::rate_cds() const
+float Mode::AutoYaw::rate_cds() const
 {
     if (_mode == AUTO_YAW_RATE) {
         return _rate_cds;

@@ -16,32 +16,26 @@ AC_CASS_HYT271::AC_CASS_HYT271() :
 
 bool AC_CASS_HYT271::init(uint8_t busId, uint8_t i2cAddr)
 {
-
-    sem = _dev->get_semaphore();
-
     // Bus 0 is for Pixhawk 2.1 I2C and Bus 1 is for Pixhawk 1 and PixRacer I2C
     _dev = std::move(hal.i2c_mgr->get_device(busId, i2cAddr));
+
+    WITH_SEMAPHORE(_dev->get_semaphore());
     if (!_dev) {
         printf("HYT271 device is null!");
         return false;
-    }
-
-    if (!_dev->get_semaphore()->take(0)) {
-        AP_HAL::panic("PANIC: HYT271: failed to take serial semaphore for init");
     }
 
     _dev->set_retries(10);
 
     if (!_measure()) {
         printf("HYT271 read failed");
-        _dev->get_semaphore()->give();
         return false;
     }
 
     // lower retries for run
     _dev->set_retries(3);
 
-    _dev->get_semaphore()->give();
+    //_dev->get_semaphore()->give();
 
     /* Request 20Hz update */
     // Max conversion time is 12 ms
@@ -94,9 +88,7 @@ bool AC_CASS_HYT271::_collect(float &hum, float &temp)
 
 void AC_CASS_HYT271::_timer(void)
 {
-    if(sem->take(HAL_SEMAPHORE_BLOCK_FOREVER)){
-        _healthy = _collect(_humidity, _temperature);   // Retreive data from the sensor
-        _measure();                                     // Request a new measurement to the sensor
-        sem->give();                                    // End I2C communication
-    }
+    WITH_SEMAPHORE(_sem);                           // semaphore for access to shared frontend data
+    _healthy = _collect(_humidity, _temperature);   // Retreive data from the sensor
+    _measure();                                     // Request a new measurement to the sensor
 }

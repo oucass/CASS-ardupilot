@@ -118,8 +118,9 @@ void Copter::init_ardupilot()
     init_rc_out();
 
     // initialize CASS_Imet sensors
-    init_CASS_imet();
+    //init_CASS_imet();
     init_CASS_hyt271();
+    init_CASS_O3();
 
     // motors initialised so parameters can be sent
     ap.initialised_params = true;
@@ -153,11 +154,6 @@ void Copter::init_ardupilot()
 #if AP_TERRAIN_AVAILABLE && AC_TERRAIN
     Location::set_terrain(&terrain);
     wp_nav->set_terrain(&terrain);
-#endif
-
-#if AC_AVOID_ENABLED == ENABLED
-    wp_nav->set_avoidance(&avoid);
-    loiter_nav->set_avoidance(&avoid);
 #endif
 
     attitude_control->parameter_sanity_check();

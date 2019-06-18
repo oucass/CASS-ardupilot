@@ -13,6 +13,8 @@ import pexpect
 import fnmatch
 import operator
 
+from MAVProxy.modules.lib import mp_util
+
 from pymavlink import mavwp, mavutil, DFReader
 from pysim import util, vehicleinfo
 
@@ -662,13 +664,13 @@ class AutoTest(ABC):
             t2 = self.get_sim_time_cached()
             if t2 - tstart > 10:
                 raise AutoTestTimeoutException("Failed to do waypoint thing")
-            self.mavproxy.send('wp load %s\n' % path)
-            self.mavproxy.expect('Loaded ([0-9]+) waypoints from')
-            load_count = self.mavproxy.match.group(1)
             # the following hack is to get around MAVProxy statustext deduping:
             while time.time() - self.last_wp_load < 3:
                 self.progress("Waiting for MAVProxy de-dupe timer to expire")
                 time.sleep(1)
+            self.mavproxy.send('wp load %s\n' % path)
+            self.mavproxy.expect('Loaded ([0-9]+) waypoints from')
+            load_count = self.mavproxy.match.group(1)
             self.last_wp_load = time.time()
             self.mavproxy.expect("Flight plan received")
             self.mavproxy.send('wp list\n')
@@ -1171,15 +1173,34 @@ class AutoTest(ABC):
     # UTILITIES
     #################################################
     @staticmethod
+    def longitude_scale(lat):
+        ret = math.cos(lat * (math.radians(1)));
+        print("scale=%f" % ret)
+        return ret
+
+    @staticmethod
     def get_distance(loc1, loc2):
         """Get ground distance between two locations."""
+        return AutoTest.get_distance_accurate(loc1, loc2)
         dlat = loc2.lat - loc1.lat
         try:
             dlong = loc2.lng - loc1.lng
         except AttributeError:
             dlong = loc2.lon - loc1.lon
 
-        return math.sqrt((dlat*dlat) + (dlong*dlong)) * 1.113195e5
+        return math.sqrt((dlat*dlat) + (dlong*dlong)*AutoTest.longitude_scale(loc2.lat)) * 1.113195e5
+
+    @staticmethod
+    def get_distance_accurate(loc1, loc2):
+        """Get ground distance between two locations."""
+        try:
+            lon1 = loc1.lng
+            lon2 = loc2.lng
+        except AttributeError:
+            lon1 = loc1.lon
+            lon2 = loc2.lon
+
+        return mp_util.gps_distance(loc1.lat, lon1, loc2.lat, lon2)
 
     @staticmethod
     def get_latlon_attr(loc, attrs):
@@ -1946,6 +1967,117 @@ class AutoTest(ABC):
         self.progress("Ready to start testing!")
 
 
+    def upload_using_mission_protocol(self, mission_type, items):
+        '''mavlink2 required'''
+        target_system = 1
+        target_component = 1
+        self.mav.mav.mission_count_send(target_system,
+                                        target_component,
+                                        len(items),
+                                        mission_type)
+        tstart = self.get_sim_time_cached()
+        remaining_to_send = set(range(0, len(items)))
+        sent = set()
+        while True:
+            if self.get_sim_time_cached() - tstart > 10:
+                raise NotAchievedException("timeout uploading %s" % str(mission_type))
+            if len(remaining_to_send) == 0:
+                self.progress("All sent")
+                break
+            m = self.mav.recv_match(type=['MISSION_REQUEST', 'MISSION_ACK'],
+                                    blocking=True,
+                                    timeout=1)
+            if m is None:
+                continue
+
+            if m.get_type() == 'MISSION_ACK':
+                raise NotAchievedException("Received unexpected mission ack %s" % str(m))
+
+            self.progress("Handling request for item %u" % m.seq)
+            if m.seq in sent:
+                raise NotAchievedException("received duplicate request for item %u" % m.seq)
+
+            if m.seq not in remaining_to_send:
+                raise NotAchievedException("received request for unknown item %u" % m.seq)
+
+            if m.mission_type != mission_type:
+                raise NotAchievedException("received request for item from wrong mission type")
+
+            if items[m.seq].mission_type != mission_type:
+                raise NotAchievedException("supplied item not of correct mission type")
+            if items[m.seq].target_system != target_system:
+                raise NotAchievedException("supplied item not of correct target system")
+            if items[m.seq].target_component != target_component:
+                raise NotAchievedException("supplied item not of correct target component")
+            if items[m.seq].seq != m.seq:
+                raise NotAchievedException("requested item has incorrect sequence number")
+
+            items[m.seq].pack(self.mav.mav)
+            self.progress("Sending (%s)" % str(items[m.seq]))
+            self.mav.mav.send(items[m.seq])
+            remaining_to_send.discard(m.seq)
+            sent.add(m.seq)
+        m = self.mav.recv_match(type='MISSION_ACK',
+                                blocking=True,
+                                timeout=1)
+        if m is None:
+            raise NotAchievedException("Did not receive MISSION_ACK")
+        if m.mission_type != mission_type:
+            raise NotAchievedException("Mission ack not of expected mission type")
+        if m.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+            raise NotAchievedException("Mission upload failed (%u)" % m.type)
+        self.progress("Upload succeeded")
+
+    def download_using_mission_protocol(self, mission_type):
+        '''mavlink2 required'''
+        target_system = 1
+        target_component = 1
+        self.mav.mav.mission_request_list_send(target_system,
+                                               target_component,
+                                               mission_type)
+
+        while True:
+            m = self.mav.recv_match(type='MISSION_COUNT',
+                                    blocking=True,
+                                    timeout=1)
+            self.progress(str(m))
+            if m is None:
+                raise NotAchievedException("Did not get MISSION_COUNT response")
+            if m.target_component != 250:
+                continue
+            if m.mission_type != mission_type:
+                raise NotAchievedException("Mission count response of incorrect type")
+            break
+
+        items = []
+        tstart = self.get_sim_time_cached()
+        remaining_to_receive = set(range(0, m.count))
+        next_to_request = 0
+        while True:
+            if self.get_sim_time_cached() - tstart > 10:
+                raise NotAchievedException("timeout downloading %s" % str(mission_type))
+            if len(remaining_to_receive) == 0:
+                self.progress("All received")
+                return items
+            self.progress("Requesting item %u" % next_to_request)
+            self.mav.mav.mission_request_int_send(target_system,
+                                                  target_component,
+                                                  next_to_request,
+                                                  mission_type)
+            m = self.mav.recv_match(type='MISSION_ITEM_INT',
+                                    blocking=True,
+                                    timeout=1)
+            if m is None:
+                raise NotAchievedException("Did not receive MISSION_ITEM_INT")
+            if m.mission_type != mission_type:
+                raise NotAchievedException("Received waypoint of wrong type")
+            if m.seq != next_to_request:
+                raise NotAchievedException("Received waypoint is out of sequence")
+            self.progress("Got item %u" % m.seq)
+            items.append(m)
+            next_to_request += 1
+            remaining_to_receive.discard(m.seq)
+
     def poll_home_position(self, quiet=False):
         old = self.mav.messages.get("HOME_POSITION", None)
         tstart = self.get_sim_time()
@@ -1983,6 +2115,10 @@ class AutoTest(ABC):
         here = self.mav.recv_match(type='GLOBAL_POSITION_INT',
                                    blocking=True)
         return self.get_distance_int(m, here)
+
+    def home_position_as_mav_location(self):
+        m = self.poll_home_position()
+        return mavutil.location(m.latitude*1.0e-7, m.longitude*1.0e-7, m.altitude*1.0e-3, 0)
 
     def monitor_groundspeed(self, want, tolerance=0.5, timeout=5):
         tstart = self.get_sim_time()
