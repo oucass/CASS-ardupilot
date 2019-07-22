@@ -162,23 +162,23 @@ void AC_CASS_Imet::_timer(void)
             _healthy = _read_adc(temp);
             adc_source = (adc_source + temp)/2;
         }   
+
+        // If data was collected, then calculate temperature and resistance
+        if (_healthy) {
+            _calculate(adc_source, adc_thermistor);
+        }
+
+        // After 20 samples, re-measure voltage source and update it.
+        if(runs == 100) {
+            _config_read_source();
+            flag = true;
+            runs = 0;
+        }
+        else{
+            _config_read_thermistor();
+            flag = false; 
+        }
         sem->give();
-    }
-
-    // If data was collected, then calculate temperature and resistance
-    if (_healthy) {
-        _calculate(adc_source, adc_thermistor);
-    }
-
-    // After 20 samples, re-measure voltage source and update it.
-    if(runs == 20) {
-        _config_read_source();
-        flag = true;
-        runs = 0;
-    }
-    else{
-        _config_read_thermistor();
-        flag = false; 
     }
 }
 

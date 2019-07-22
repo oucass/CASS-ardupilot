@@ -194,7 +194,7 @@ void NOINLINE Copter::send_rpm(mavlink_channel_t chan)
 /*
  *  send a message on both GCS links
  */
-void NOINLINE Copter::send_cass_imet(mavlink_channel_t chan) {
+void Copter::send_cass_imet(mavlink_channel_t chan) {
     //mavlink_cass_sensor_raw_t packet;
     float raw_sensor[5];
     uint8_t size = 5;

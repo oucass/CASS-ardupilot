@@ -191,7 +191,7 @@ void Copter::userhook_SuperSlowLoop()
     if(!ap.land_complete && copter.position_ok()){ // !arming.is_armed(), !ap.land_complete, motors->armed()
 
         //Fan Control    
-        if(alt > 185.0f){
+        if(alt > 185.0f && SRV_Channels::get_output_scaled(SRV_Channel::k_egg_drop) < 50){
             SRV_Channels::set_output_scaled(SRV_Channel::k_egg_drop, fan_pwm_on);
             _fan_status = true;
             #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
@@ -199,7 +199,7 @@ void Copter::userhook_SuperSlowLoop()
             #endif
         }
         else{
-            if(alt < 140.0f){
+            if(alt < 140.0f && SRV_Channels::get_output_scaled(SRV_Channel::k_egg_drop) > 50){
                 SRV_Channels::set_output_scaled(SRV_Channel::k_egg_drop, fan_pwm_off);
                 _fan_status = false;
                 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
