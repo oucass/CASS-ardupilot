@@ -87,6 +87,7 @@
 // CASS libraries declaration
 #include <AC_CASS_IMET/AC_CASS_Imet.h>
 #include <AC_CASS_HYT271/AC_CASS_HYT271.h>
+#include <AC_CASS_03/AC_CASS_03.h>
 
 // Configuration
 #include "defines.h"
@@ -244,6 +245,8 @@ private:
 
     // Imet Temperature sensors class declaration
     AC_CASS_Imet CASS_Imet[4]; 
+    // O3 sensors class declaration
+    AC_CASS_03 CASS_O3; 
     // HYT271 humidity sensors class declaration
     AC_CASS_HYT271 CASS_HYT271[4];
 
@@ -955,10 +958,12 @@ private:
     // CASS Mavlink message
     void send_cass_imet(mavlink_channel_t chan);
     void send_cass_hyt271(mavlink_channel_t chan);
+    void send_cass_O3(mavlink_channel_t chan);
 
     // CASS Libraries sensor code initilizer
     void init_CASS_imet(void);
     void init_CASS_hyt271(void);  
+    void init_CASS_O3(void);
 
 #include "mode.h"
 

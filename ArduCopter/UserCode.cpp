@@ -60,7 +60,28 @@ void Copter::userhook_FastLoop()
 #ifdef USERHOOK_50HZLOOP
 void Copter::userhook_50Hz()
 {
-    // put your 50Hz code here
+    // put your 10Hz code here
+    // Read Ozone and Health. Write sensors packet into the SD card
+    #if CONFIG_HAL_BOARD != HAL_BOARD_SITL
+        struct log_O3 pkt_temp = {
+            LOG_PACKET_HEADER_INIT(LOG_O3_MSG),
+            time_stamp             : AP_HAL::micros64(),           //Store time in microseconds
+            healthy                : copter.CASS_O3.healthy(),     //Store sensor health
+            ozone                  : copter.CASS_O3.get_ozone(),   //Store ozone in ppm
+            voltage                : copter.CASS_O3.get_adc_volt()//Stpre voltage in milivolts
+        }; 
+        copter.DataFlash.WriteBlock(&pkt_temp, sizeof(pkt_temp));   //Send package to SD card
+    #else
+        uint32_t m = AP_HAL::millis();
+        struct log_O3 pkt_temp = {
+            LOG_PACKET_HEADER_INIT(LOG_O3_MSG),
+            time_stamp             : AP_HAL::micros64(),           //Store time in microseconds
+            healthy                : true,     //Store sensor health
+            ozone                  : sinf(0.0003f*m) * 0.001f,   //Store ozone in ppm
+            voltage                : sinf(0.0003f*m) * 0.001f    //Stpre voltage in milivolts
+        }; 
+        copter.DataFlash.WriteBlock(&pkt_temp, sizeof(pkt_temp));   //Send package to SD card
+    #endif
 }
 #endif
 

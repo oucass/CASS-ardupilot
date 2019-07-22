@@ -228,6 +228,23 @@ void Copter::send_cass_imet(mavlink_channel_t chan) {
     //mavlink_msg_cass_sensor_raw_send_struct(chan, &packet);
 }
 
+void Copter::send_cass_O3(mavlink_channel_t chan) {
+    //mavlink_cass_sensor_raw_t packet;
+    float raw_sensor[5];
+    uint8_t size = 5;
+    memset(raw_sensor, 0, size * sizeof(float));
+
+    // Send O3 ppm
+    raw_sensor[0] = copter.CASS_O3.get_ozone();
+    // Call Mavlink function and send CASS data
+    mavlink_msg_cass_sensor_raw_send(
+        chan,
+        AP_HAL::millis(),
+        0,
+        size,
+        raw_sensor);
+}
+
 void Copter::send_cass_hyt271(mavlink_channel_t chan) {
     //mavlink_cass_sensor_raw_t packet;
     float raw_sensor[5];
@@ -470,6 +487,11 @@ bool GCS_MAVLINK_Copter::try_send_message(enum ap_message id)
         copter.send_cass_hyt271(chan);
         break;
 
+    case MSG_CASS_O3:
+        CHECK_PAYLOAD_SIZE(CASS_SENSOR_RAW);
+        copter.send_cass_O3(chan);
+        break;
+
     default:
         return GCS_MAVLINK::try_send_message(id);
     }
@@ -613,7 +635,8 @@ static const ap_message STREAM_EXTRA3_msgs[] = {
 #if AP_TERRAIN_AVAILABLE && AC_TERRAIN
     MSG_TERRAIN,
 #endif
-    MSG_CASS_IMET,
+    //MSG_CASS_IMET,
+    MSG_CASS_O3,
     MSG_BATTERY2,
     MSG_BATTERY_STATUS,
     MSG_MOUNT_STATUS,
