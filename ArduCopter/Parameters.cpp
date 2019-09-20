@@ -322,6 +322,67 @@ const AP_Param::Info Copter::var_info[] = {
     // @User: Advanced
     GSCALAR(simple_modes, "SIMPLE",                 0),
 
+    ////////////////////CASS user params initialization////////////////////////////////////
+
+    // @Param: USER_SENSORS
+    // @DisplayName: User sensor
+    // @Description: User sensor package ID. Enter the unique ID assigned to the sensor package
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(user_sensor1,    "USER_SENSORS1",          0),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: User sensor
+    // @Description: User sensor package ID. Enter the unique ID assigned to the sensor package
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(user_sensor2,    "USER_SENSORS2",          0),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: User sensor
+    // @Description: User sensor package ID. Enter the unique ID assigned to the sensor package
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(user_sensor3,    "USER_SENSORS3",          0),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: User sensor
+    // @Description: User sensor package ID. Enter the unique ID assigned to the sensor package
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(user_sensor4,    "USER_SENSORS4",          0),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: User sensor
+    // @Description: User sensor package ID. Enter the unique ID assigned to the sensor package
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(user_sensor5,    "USER_SENSORS5",          0),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: User sensor
+    // @Description: User sensor package ID. Enter the unique ID assigned to the sensor package
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(user_sensor6,    "USER_SENSORS6",          0),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: User sensor
+    // @Description: User sensor package ID. Enter the unique ID assigned to the sensor package
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(user_sensor7,    "USER_SENSORS7",          0),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: User sensor
+    // @Description: User sensor package ID. Enter the unique ID assigned to the sensor package
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(user_sensor8,    "USER_SENSORS8",          0),
+
+
+    ////////////////////////////CASS////////////////////////////////////
+
     // @Param: LOG_BITMASK
     // @DisplayName: Log bitmask
     // @Description: 4 byte bitmap of log types to enable

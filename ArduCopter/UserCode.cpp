@@ -216,10 +216,14 @@ void Copter::userhook_SuperSlowLoop()
             float aux; //Total area exposed to wind and aux variable
 
             //Current Attitude of the UAS
+            Vector3f _gyro_rate = copter.ins.get_gyro(0);
+            float _yaw_rate = _gyro_rate[2];
+            //printf("yaw: %5.2f \n",_yaw_rate);
             copter.EKF2.getEulerAngles(-1,e_angles);
             _roll = e_angles.x;
             _pitch = e_angles.y;
             _yaw = e_angles.z;
+            
 
             //Estimated horizontal velocity calculated by the EKF2
             //copter.EKF2.getVelNED(-1,vel_xyz);
@@ -227,12 +231,12 @@ void Copter::userhook_SuperSlowLoop()
             speed = norm(vel_xyz.x,vel_xyz.y); // cm/s
             dist_to_wp = copter.wp_nav->get_wp_distance_to_destination(); // cm (horizontally)
 
-            if(speed < 120.0f && dist_to_wp < 500){
+            if(speed < 120.0f && dist_to_wp < 500 && abs(_yaw_rate) < 0.25){
                 if(k <= N-1){
                     // Roll and Pitch accumulation
                     _roll_sum = _roll_sum + _roll;
                     _pitch_sum = _pitch_sum + _pitch;
-                    aux = atan2f(sinf(_roll)*cosf(_pitch), -sinf(_pitch));
+                    aux = atan2f(sinf(_roll)*cosf(_pitch), -sinf(_pitch)*cosf(_roll));
                     var_temp_dir = var_temp_dir + aux*aux;
                     var_temp_gamma = var_temp_gamma + _pitch*_pitch;
                     k = k + 1;
@@ -241,7 +245,7 @@ void Copter::userhook_SuperSlowLoop()
                     // 1st order Estimator, Mean and variance calculation
                     avgP = _pitch_sum/N;
                     avgR = _roll_sum/N;
-                    body_wind_dir = atan2f(sinf(avgR)*cosf(avgP), -sinf(avgP));
+                    body_wind_dir = atan2f(sinf(avgR)*cosf(avgP), -sinf(avgP)*cosf(avgR));
                     var_gamma = var_temp_gamma/N - avgP*avgP;
                     var_wind_dir = var_temp_dir/N - body_wind_dir*body_wind_dir;
                     if (var_wind_dir < 1e-6f){

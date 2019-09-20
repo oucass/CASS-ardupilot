@@ -24,27 +24,48 @@ void Copter::init_CASS_imet(){
     // coeff[3][0] = 1.0;
     // coeff[3][1] = 1.0;
     // coeff[3][2] = 1.0;
-    
-    //CS2.5 TONYSONDE SENSORS
-    //IMET temp number 57562:
-    coeff[0][0] = 1.02777010e-03f;
-    coeff[0][1] = 2.59349232e-04f;
-    coeff[0][2] = 1.56043078e-07f;
 
-    //IMET temp number 57563:
-    coeff[1][0] = 9.91077399e-04f;
-    coeff[1][1] = 2.64646362e-04f;
-    coeff[1][2] = 1.43596294e-07f;
+    //CS3D SENSORS
+    //IMET temp number 57560:
+    coeff[0][0] = 9.98873354e-04f;
+    coeff[0][1] = 2.63219974e-04f;
+    coeff[0][2] = 1.47120693e-07f;
 
-    //IMET temp number 58821:
-    coeff[2][0] = 1.00786813e-03f;
-    coeff[2][1] = 2.61722397e-04f;
-    coeff[2][2] = 1.48476183e-07f;
+    //IMET temp number 57552:
+    coeff[1][0] = 1.02106957e-03f;
+    coeff[1][1] = 2.60784397e-04f;
+    coeff[1][2] = 1.51993171e-07f;
+
+    //IMET temp number 57558:
+    coeff[2][0] = 1.01048989e-03f;
+    coeff[2][1] = 2.62050421e-04f;
+    coeff[2][2] = 1.48891207e-07f;
 
     //IMET temp number none:
     coeff[3][0] = 1.0;
     coeff[3][1] = 1.0;
     coeff[3][2] = 1.0;
+    
+    // //CS2.5 TONYSONDE SENSORS
+    // //IMET temp number 57562:
+    // coeff[0][0] = 1.02777010e-03f;
+    // coeff[0][1] = 2.59349232e-04f;
+    // coeff[0][2] = 1.56043078e-07f;
+
+    // //IMET temp number 57563:
+    // coeff[1][0] = 9.91077399e-04f;
+    // coeff[1][1] = 2.64646362e-04f;
+    // coeff[1][2] = 1.43596294e-07f;
+
+    // //IMET temp number 58821:
+    // coeff[2][0] = 1.00786813e-03f;
+    // coeff[2][1] = 2.61722397e-04f;
+    // coeff[2][2] = 1.48476183e-07f;
+
+    // //IMET temp number none:
+    // coeff[3][0] = 1.0;
+    // coeff[3][1] = 1.0;
+    // coeff[3][2] = 1.0;
 
     // //CS2.5 CHRISSONDE SENSORS
     // //IMET temp number 57549:

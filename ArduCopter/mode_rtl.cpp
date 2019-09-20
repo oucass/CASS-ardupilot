@@ -260,7 +260,14 @@ void Copter::ModeRTL::descent_start()
     pos_control->set_target_to_stopping_point_z();
 
     // initialise yaw
-    auto_yaw.set_mode(AUTO_YAW_HOLD);
+    if(auto_yaw.default_mode(true) == AUTO_YAW_INTO_WIND){
+        auto_yaw.set_mode(AUTO_YAW_INTO_WIND);}
+    else if(auto_yaw.default_mode(true) == AUTO_YAW_WIND_CT2){
+        auto_yaw.set_mode(AUTO_YAW_WIND_CT2);
+    }
+    else{
+        auto_yaw.set_mode(AUTO_YAW_HOLD);
+    }
 }
 
 // rtl_descent_run - implements the final descent to the RTL_ALT
@@ -343,7 +350,14 @@ void Copter::ModeRTL::land_start()
     }
 
     // initialise yaw
-    auto_yaw.set_mode(AUTO_YAW_HOLD);
+    if(auto_yaw.default_mode(true) == AUTO_YAW_INTO_WIND){
+        auto_yaw.set_mode(AUTO_YAW_INTO_WIND);}
+    else if(auto_yaw.default_mode(true) == AUTO_YAW_WIND_CT2){
+        auto_yaw.set_mode(AUTO_YAW_WIND_CT2);
+    }
+    else{
+        auto_yaw.set_mode(AUTO_YAW_HOLD);
+    }
 }
 
 bool Copter::ModeRTL::landing_gear_should_be_deployed() const

@@ -211,6 +211,16 @@ public:
         k_param_gcs3,
         k_param_gcs_pid_mask,    // 126
 
+        // CASS sensors ID
+        k_param_user_sensor1 = 127,
+        k_param_user_sensor2,
+        k_param_user_sensor3,
+        k_param_user_sensor4,
+        k_param_user_sensor5,
+        k_param_user_sensor6,
+        k_param_user_sensor7,
+        k_param_user_sensor8,
+
         //
         // 135 : reserved for Solo until features merged with master
         //
@@ -423,6 +433,17 @@ public:
     AP_Int8         flight_mode6;
     AP_Int8         simple_modes;
     AP_Int8         flight_mode_chan;
+
+    //CASS Sensors ID
+
+    AP_Int32        user_sensor1;
+    AP_Int32        user_sensor2;
+    AP_Int32        user_sensor3;
+    AP_Int32        user_sensor4;
+    AP_Int32        user_sensor5;
+    AP_Int32        user_sensor6;
+    AP_Int32        user_sensor7;
+    AP_Int32        user_sensor8;
 
     // Misc
     //

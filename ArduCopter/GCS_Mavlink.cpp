@@ -207,10 +207,25 @@ void Copter::send_cass_imet(mavlink_channel_t chan) {
     #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     // Variables simulation for IMET sensors
         uint32_t m = AP_HAL::millis();
-        raw_sensor[0] = 298.15 + sinf(m) * 25;
-        raw_sensor[1] = 1 + raw_sensor[0];
-        raw_sensor[2] = 1 + raw_sensor[1];
-        raw_sensor[3] = 1 + raw_sensor[2];
+        float alt; float simT;
+        copter.ahrs.get_relative_position_D_home(alt);
+        alt = -1*alt;  
+        if(alt < 50){
+            simT = 300 - 2*alt*alt/2500;
+        }
+        else if(alt < 150){
+            simT = 298.5 - 0.01*alt;
+        }
+        else if(alt < 200){
+            simT = 295.875 + 2*alt*alt/40000;
+        }
+        else{
+            simT = 297.875;
+        }
+        raw_sensor[0] = simT + sinf(0.1f*float(m)) * 0.02;
+        raw_sensor[1] = simT + sinf(0.15f*float(m)) * 0.03;
+        raw_sensor[2] = simT + sinf(0.12f*float(m)) * 0.025;
+        raw_sensor[3] = simT + sinf(0.18f*float(m)) * 0.028;
         //printf("Imet temp: %5.2f \n",raw_sensor[0]);
     #endif 
     // Call Mavlink function and send CASS data

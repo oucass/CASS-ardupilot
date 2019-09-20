@@ -293,7 +293,7 @@ const AP_Param::GroupInfo AP_InertialSensor::var_info[] = {
     // @Description: Use third IMU for attitude, velocity and position estimates
     // @Values: 0:Disabled,1:Enabled
     // @User: Advanced
-    AP_GROUPINFO("USE3", 22, AP_InertialSensor, _use[2],  0),
+    AP_GROUPINFO("USE3", 22, AP_InertialSensor, _use[2],  1),
 
     // @Param: STILL_THRESH
     // @DisplayName: Stillness threshold for detecting if we are moving
@@ -676,6 +676,20 @@ AP_InertialSensor::detect_backends(void)
 
     _backends_detected = true;
 
+#if defined(HAL_CHIBIOS_ARCH_CUBEBLACK)
+    // special case for CubeBlack, where the IMUs on the isolated
+    // board could fail on some boards. If the user has INS_USE=1,
+    // INS_USE2=1 and INS_USE3=0 then force INS_USE3 to 1. This is
+    // done as users loading past parameter files may end up with
+    // INS_USE3=0 unintentionally, which is unsafe on these
+    // boards. For users who really want limited IMUs they will need
+    // to either use the INS_ENABLE_MASK or set INS_USE2=0 which will
+    // enable the first IMU without triggering this check
+    if (_use[0] == 1 && _use[1] == 1 && _use[2] == 0) {
+        _use[2].set(1);
+    }
+#endif
+
     uint8_t probe_count = 0;
     uint8_t enable_mask = uint8_t(_enable_mask.get());
     uint8_t found_mask = 0;
@@ -731,7 +745,7 @@ AP_InertialSensor::detect_backends(void)
 
     case AP_BoardConfig::PX4_BOARD_PIXHAWK2:
         // older Pixhawk2 boards have the MPU6000 instead of MPU9250
-        _fast_sampling_mask.set_default(1);
+        _fast_sampling_mask.set_default(5);
         ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device(HAL_INS_MPU9250_EXT_NAME), ROTATION_PITCH_180));
         ADD_BACKEND(AP_InertialSensor_LSM9DS0::probe(*this,
                                                       hal.spi->get_device(HAL_INS_LSM9DS0_EXT_G_NAME),
