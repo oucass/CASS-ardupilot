@@ -212,7 +212,7 @@ void Copter::userhook_SuperSlowLoop()
         //printf("PWM: %5.2f \n",(float)pwm);
 
         //Wind Estimator Algorithm
-        if(alt > 200.0f){
+        if(alt > 400.0f){
             float aux; //Total area exposed to wind and aux variable
 
             //Current Attitude of the UAS
