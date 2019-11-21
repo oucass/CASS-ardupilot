@@ -10,13 +10,14 @@ supported by ArduPilot. That means you can add support for a new
 UAVCAN peripheral based on the STM32 by just writing a simple
 hwdef.dat that defines the pinout of your device.
 
-Currently we have three targets building for AP_Periph firmwares:
+Currently we have four targets building for AP_Periph firmwares:
 
  - A STM32F103 128k flash part made by mRobotics (target f103-GPS)
  - A STM32F412 512k flash part made by CUAV (target CUAV_GPS)
  - A STM32F105 256k flash part (used in ZubaxGNSSv2)
+ - A STM32F303 256k flash part made by mRobotics (target f303-GPS)
 
-More are planned soon.
+More can be added using the hwdef.dat system
 
 # Features
 
@@ -78,3 +79,25 @@ To build the bootloader use this:
 
 the resulting bootloader will be in Tools/bootloaders
 
+# Firmware Builds
+
+Firmware targets are automatically built and distributed on the
+ArduPilot firmware server on firmware.ardupilot.org. These firmwares
+can be loaded using Mission Planner or the UAVCAN GUI Tool. Parameters
+for peripherals can be changed using the Mission Planner SLCAN support
+or using UAVCAN GUI Tools.
+
+# User Bootloader Update
+
+The bootloader is automatically stored in ROMFS in the main
+firmware. End users can update the bootloader by setting the UAVCAN
+parameter "FLASH_BOOTLOADER" to 1. After setting it to 1 the node will
+respond with a debug text message which can be seen in the UAVCAN GUI
+tool to show the result of the flash.
+
+# Discussion and Feedback
+
+Please join the discussions at these locations:
+
+ - https://discuss.ardupilot.org/t/ap-periph-1-0-0-stable-released/49049
+ - https://gitter.im/ArduPilot/CANBUS

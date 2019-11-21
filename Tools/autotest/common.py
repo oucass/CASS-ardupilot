@@ -563,15 +563,6 @@ class AutoTest(ABC):
             raise NotAchievedException("No cached time available")
         return x.time_boot_ms * 1.0e-3
 
-    def delay_sim_time(self, delay):
-        '''delay for delay seconds in simulation time'''
-        m = self.mav.recv_match(type='SYSTEM_TIME', blocking=True)
-        start = m.time_boot_ms
-        while True:
-            m = self.mav.recv_match(type='SYSTEM_TIME', blocking=True)
-            if m.time_boot_ms - start > delay * 1000:
-                return
-
     def sim_location(self):
         """Return current simulator location."""
         m = self.mav.recv_match(type='SIMSTATE', blocking=True)
@@ -583,19 +574,19 @@ class AutoTest(ABC):
     def save_wp(self, ch=7):
         """Trigger RC Aux to save waypoint."""
         self.set_rc(ch, 1000)
-        self.wait_seconds(1)
+        self.delay_sim_time(1)
         self.set_rc(ch, 2000)
-        self.wait_seconds(1)
+        self.delay_sim_time(1)
         self.set_rc(ch, 1000)
-        self.wait_seconds(1)
+        self.delay_sim_time(1)
 
     def clear_wp(self, ch=8):
         """Trigger RC Aux to clear waypoint."""
         self.progress("Clearing waypoints")
         self.set_rc(ch, 1000)
-        self.wait_seconds(0.5)
+        self.delay_sim_time(0.5)
         self.set_rc(ch, 2000)
-        self.wait_seconds(0.5)
+        self.delay_sim_time(0.5)
         self.set_rc(ch, 1000)
         self.mavproxy.send('wp list\n')
         self.mavproxy.expect('Requesting 0 waypoints')
@@ -1548,8 +1539,9 @@ class AutoTest(ABC):
             raise NotAchievedException("Did not get AUTOPILOT_VERSION")
         return m.capabilities
 
-    def do_get_autopilot_capabilities(self):
+    def test_get_autopilot_capabilities(self):
         self.assert_capability(mavutil.mavlink.MAV_PROTOCOL_CAPABILITY_PARAM_FLOAT)
+        self.assert_capability(mavutil.mavlink.MAV_PROTOCOL_CAPABILITY_COMPASS_CALIBRATION)
 
     def get_mode_from_mode_mapping(self, mode):
         """Validate and return the mode number from a string or int."""
@@ -1713,7 +1705,7 @@ class AutoTest(ABC):
     #################################################
     # WAIT UTILITIES
     #################################################
-    def wait_seconds(self, seconds_to_wait):
+    def delay_sim_time(self, seconds_to_wait):
         """Wait some second in SITL time."""
         tstart = self.get_sim_time()
         tnow = tstart
@@ -3146,7 +3138,7 @@ class AutoTest(ABC):
             raise NotAchievedException("Failed to clear mission")
         self.last_wp_load = time.time()
 
-    def test_sensor_config_error_loop(self):
+    def test_config_error_loop(self):
         '''test the sensor config error loop works and that parameter sets are persistent'''
         parameter_name = "SERVO8_MIN"
         old_parameter_value = self.get_parameter(parameter_name)
@@ -3163,8 +3155,8 @@ class AutoTest(ABC):
                 self.disarm_vehicle(force=True)
 
             self.reboot_sitl(required_bootcount=1);
-            self.progress("Waiting for 'Check BRD_TYPE'")
-            self.mavproxy.expect("Check BRD_TYPE");
+            self.progress("Waiting for 'Config error'")
+            self.mavproxy.expect("Config error");
             self.progress("Setting %s to %f" % (parameter_name, new_parameter_value))
             self.set_parameter(parameter_name, new_parameter_value)
         except Exception as e:
@@ -3610,9 +3602,9 @@ switch value'''
             "Test Set Home",
              self.fly_test_set_home),
 
-            ("SensorConfigErrorLoop",
-             "Test Sensor Config Error Loop",
-             self.test_sensor_config_error_loop),
+            ("ConfigErrorLoop",
+             "Test Config Error Loop",
+             self.test_config_error_loop),
 
             ("Parameters",
              "Test Parameter Set/Get",

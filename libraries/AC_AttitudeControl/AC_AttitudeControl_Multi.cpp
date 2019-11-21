@@ -280,6 +280,12 @@ void AC_AttitudeControl_Multi::set_throttle_out(float throttle_in, bool apply_an
     _motors.set_throttle_avg_max(get_throttle_avg_max(MAX(throttle_in, _throttle_in)));
 }
 
+void AC_AttitudeControl_Multi::set_throttle_mix_max(float ratio)
+{
+    ratio = constrain_float(ratio, 0.0f, 1.0f);
+    _throttle_rpy_mix_desired = (1.0f - ratio) * _thr_mix_min + ratio * _thr_mix_max;
+}
+
 // returns a throttle including compensation for roll/pitch angle
 // throttle value should be 0 ~ 1
 float AC_AttitudeControl_Multi::get_throttle_boosted(float throttle_in)
@@ -338,7 +344,7 @@ void AC_AttitudeControl_Multi::rate_controller_run()
     _motors.set_pitch_ff(get_rate_pitch_pid().get_ff());
 
     _motors.set_yaw(get_rate_yaw_pid().update_all(_rate_target_ang_vel.z, gyro_latest.z, _motors.limit.yaw) + _actuator_sysid.z);
-    _motors.set_yaw_ff(get_rate_yaw_pid().get_ff());
+    _motors.set_yaw_ff(get_rate_yaw_pid().get_ff()*_feedforward_scalar);
 
     _rate_sysid_ang_vel.zero();
     _actuator_sysid.zero();

@@ -56,6 +56,14 @@ private:
     bool _initialised;
 };
 
+// Harmonic notch update mode
+enum class HarmonicNotchDynamicMode {
+    Fixed           = 0,
+    UpdateThrottle  = 1,
+    UpdateRPM       = 2,
+    UpdateBLHeli    = 3,
+};
+
 /*
   harmonic notch filter configuration parameters
  */
@@ -68,6 +76,8 @@ public:
     uint8_t harmonics(void) const { return _harmonics; }
     // reference value of the harmonic notch
     float reference(void) const { return _reference; }
+    // notch dynamic tracking mode
+    HarmonicNotchDynamicMode tracking_mode(void) const { return HarmonicNotchDynamicMode(_tracking_mode.get()); }
     static const struct AP_Param::GroupInfo var_info[];
 
 private:
@@ -75,6 +85,8 @@ private:
     AP_Int8 _harmonics;
     // notch reference value
     AP_Float _reference;
+    // notch dynamic tracking mode
+    AP_Int8 _tracking_mode;
 };
 
 typedef HarmonicNotchFilter<Vector3f> HarmonicNotchFilterVector3f;

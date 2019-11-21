@@ -81,6 +81,7 @@
 #include <AP_Parachute/AP_Parachute.h>
 #include <AP_ADSB/AP_ADSB.h>
 #include <AP_ICEngine/AP_ICEngine.h>
+#include <AP_EFI/AP_EFI.h>
 #include <AP_Gripper/AP_Gripper.h>
 #include <AP_Landing/AP_Landing.h>
 #include <AP_LandingGear/AP_LandingGear.h>     // Landing Gear library
@@ -752,8 +753,7 @@ private:
 
     // Camera/Antenna mount tracking and stabilisation stuff
 #if MOUNT == ENABLED
-    // current_loc uses the baro/gps soloution for altitude rather than gps only.
-    AP_Mount camera_mount{current_loc};
+    AP_Mount camera_mount;
 #endif
 
     // Arming/Disarming mangement class
@@ -904,6 +904,7 @@ private:
     void read_rangefinder(void);
     void read_airspeed(void);
     void rpm_update(void);
+    void efi_update(void);
     void init_ardupilot();
     void startup_ground(void);
     bool set_mode(Mode& new_mode, const ModeReason reason);
@@ -915,6 +916,7 @@ private:
     void startup_INS_ground(void);
     bool should_log(uint32_t mask);
     int8_t throttle_percentage(void);
+    void update_dynamic_notch();
     bool auto_takeoff_check(void);
     void takeoff_calc_roll(void);
     void takeoff_calc_pitch(void);

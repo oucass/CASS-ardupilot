@@ -39,11 +39,13 @@ float Copter::SurfaceTracking::adjust_climb_rate(float target_rate)
     }
     valid_for_logging = true;
 
+#if AC_AVOID_ENABLED == ENABLED
     // upward facing terrain following never gets closer than avoidance margin
     if (surface == Surface::CEILING) {
         const float margin_cm = copter.avoid.enabled() ? copter.avoid.get_margin() * 100.0f : 0.0f;
         target_dist_cm = MAX(target_dist_cm, margin_cm);
     }
+#endif
 
     // calc desired velocity correction from target rangefinder alt vs actual rangefinder alt (remove the error already passed to Altitude controller to avoid oscillations)
     const float distance_error = (target_dist_cm - rf_state.alt_cm) - (dir * current_alt_error);
@@ -84,14 +86,19 @@ void Copter::SurfaceTracking::set_target_alt_cm(float _target_alt_cm)
     last_update_ms = AP_HAL::millis();
 }
 
-bool Copter::SurfaceTracking::get_dist_for_logging(float &target_dist, float &actual_dist) const
+bool Copter::SurfaceTracking::get_target_dist_for_logging(float &target_dist) const
 {
     if (!valid_for_logging || (surface == Surface::NONE)) {
         return false;
     }
+
     target_dist = target_dist_cm * 0.01f;
-    actual_dist = ((surface == Surface::GROUND) ? copter.rangefinder_state.alt_cm : copter.rangefinder_up_state.alt_cm) * 0.01f;
     return true;
+}
+
+float Copter::SurfaceTracking::get_dist_for_logging() const
+{
+    return ((surface == Surface::CEILING) ? copter.rangefinder_up_state.alt_cm : copter.rangefinder_state.alt_cm) * 0.01f;
 }
 
 // set direction

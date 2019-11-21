@@ -16,7 +16,7 @@
 
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
-#include "RangeFinder.h"
+#include "AP_RangeFinder.h"
 
 class AP_RangeFinder_Backend
 {
@@ -40,8 +40,8 @@ public:
     int16_t min_distance_cm() const { return params.min_distance_cm; }
     int16_t ground_clearance_cm() const { return params.ground_clearance_cm; }
     MAV_DISTANCE_SENSOR get_mav_distance_sensor_type() const;
-    RangeFinder::RangeFinder_Status status() const;
-    RangeFinder::RangeFinder_Type type() const { return (RangeFinder::RangeFinder_Type)params.type.get(); }
+    RangeFinder::Status status() const;
+    RangeFinder::Type type() const { return (RangeFinder::Type)params.type.get(); }
 
     // true if sensor is returning data
     bool has_data() const;
@@ -62,7 +62,7 @@ protected:
     void update_status();
 
     // set status and update valid_count
-    void set_status(RangeFinder::RangeFinder_Status status);
+    void set_status(RangeFinder::Status status);
 
     RangeFinder::RangeFinder_State &state;
     AP_RangeFinder_Params &params;
@@ -71,7 +71,7 @@ protected:
     HAL_Semaphore _sem;
 
     //Type Backend initialised with
-    RangeFinder::RangeFinder_Type _backend_type;
+    RangeFinder::Type _backend_type;
 
     virtual MAV_DISTANCE_SENSOR _get_mav_distance_sensor_type() const = 0;
 };

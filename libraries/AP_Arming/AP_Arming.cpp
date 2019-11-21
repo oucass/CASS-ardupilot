@@ -31,6 +31,7 @@
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_Baro/AP_Baro.h>
 #include <AP_RangeFinder/AP_RangeFinder.h>
+#include <AP_Terrain/AP_Terrain.h>
 
 #if HAL_WITH_UAVCAN
   #include <AP_BoardConfig/AP_BoardConfig_CAN.h>
@@ -106,8 +107,8 @@ const AP_Param::GroupInfo AP_Arming::var_info[] = {
     // @Param: CHECK
     // @DisplayName: Arm Checks to Peform (bitmask)
     // @Description: Checks prior to arming motor. This is a bitmask of checks that will be performed before allowing arming. The default is no checks, allowing arming at any time. You can select whatever checks you prefer by adding together the values of each check type to set this parameter. For example, to only allow arming when you have GPS lock and no RC failsafe you would set ARMING_CHECK to 72. For most users it is recommended that you set this to 1 to enable all checks.
-    // @Values: 0:None,1:All,2:Barometer,4:Compass,8:GPS Lock,16:INS(INertial Sensors - accels & gyros),32:Parameters(unused),64:RC Channels,128:Board voltage,256:Battery Level,1024:LoggingAvailable,2048:Hardware safety switch,4096:GPS configuration,8192:System
-    // @Values{Plane}: 0:None,1:All,2:Barometer,4:Compass,8:GPS Lock,16:INS(INertial Sensors - accels & gyros),32:Parameters(unused),64:RC Channels,128:Board voltage,256:Battery Level,512:Airspeed,1024:LoggingAvailable,2048:Hardware safety switch,4096:GPS configuration,8192:System
+    // @Values: 0:None,1:All,2:Barometer,4:Compass,8:GPS Lock,16:INS(INertial Sensors - accels & gyros),32:Parameters(unused),64:RC Channels,128:Board voltage,256:Battery Level,1024:LoggingAvailable,2048:Hardware safety switch,4096:GPS configuration,8192:System,16384:Mission,32768:RangeFinder
+    // @Values{Plane}: 0:None,1:All,2:Barometer,4:Compass,8:GPS Lock,16:INS(INertial Sensors - accels & gyros),32:Parameters(unused),64:RC Channels,128:Board voltage,256:Battery Level,512:Airspeed,1024:LoggingAvailable,2048:Hardware safety switch,4096:GPS configuration,8192:System,16384:Mission,32768:RangeFinder
     // @Bitmask: 0:All,1:Barometer,2:Compass,3:GPS lock,4:INS,5:Parameters,6:RC Channels,7:Board voltage,8:Battery Level,10:Logging Available,11:Hardware safety switch,12:GPS Configuration,13:System,14:Mission,15:Rangefinder
     // @Bitmask{Plane}: 0:All,1:Barometer,2:Compass,3:GPS lock,4:INS,5:Parameters,6:RC Channels,7:Board voltage,8:Battery Level,9:Airspeed,10:Logging Available,11:Hardware safety switch,12:GPS Configuration,13:System,14:Mission,15:Rangefinder
     // @User: Standard
@@ -698,6 +699,13 @@ bool AP_Arming::system_checks(bool report)
             check_failed(ARMING_CHECK_SYSTEM, report, "Param storage failed");
             return false;
         }
+#if AP_TERRAIN_AVAILABLE
+        const AP_Terrain *terrain = AP_Terrain::get_singleton();
+        if ((terrain != nullptr) && terrain->init_failed()) {
+            check_failed(ARMING_CHECK_SYSTEM, report, "Terrain out of memory");
+            return false;
+        }
+#endif
     }
     if (AP::internalerror().errors() != 0) {
         check_failed(report, "Internal errors (0x%x)", (unsigned int)AP::internalerror().errors());
@@ -716,12 +724,12 @@ bool AP_Arming::proximity_checks(bool report) const
     if (proximity == nullptr) {
         return true;
     }
-    if (proximity->get_status() == AP_Proximity::Proximity_NotConnected) {
+    if (proximity->get_status() == AP_Proximity::Status::NotConnected) {
         return true;
     }
 
     // return false if proximity sensor unhealthy
-    if (proximity->get_status() < AP_Proximity::Proximity_Good) {
+    if (proximity->get_status() < AP_Proximity::Status::Good) {
         check_failed(report, "check proximity sensor");
         return false;
     }

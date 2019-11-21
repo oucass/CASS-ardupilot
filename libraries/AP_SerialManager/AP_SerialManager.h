@@ -25,8 +25,12 @@
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <AP_Param/AP_Param.h>
 
-// we have hal.uartA to hal.uartH
+#ifdef HAL_UART_NUM_SERIAL_PORTS
+#define SERIALMANAGER_NUM_PORTS HAL_UART_NUM_SERIAL_PORTS
+#else
+// assume max 8 ports
 #define SERIALMANAGER_NUM_PORTS 8
+#endif
 
  // console default baud rates and buffer sizes
 #ifdef HAL_SERIAL0_BAUD_DEFAULT
@@ -69,6 +73,11 @@
 
 #define AP_SERIALMANAGER_ROBOTIS_BUFSIZE_RX  128
 #define AP_SERIALMANAGER_ROBOTIS_BUFSIZE_TX  128
+
+// MegaSquirt EFI protocol
+#define AP_SERIALMANAGER_EFI_MS_BAUD           115
+#define AP_SERIALMANAGER_EFI_MS_BUFSIZE_RX     512
+#define AP_SERIALMANAGER_EFI_MS_BUFSIZE_TX     16
 
 // SBUS servo outputs
 #define AP_SERIALMANAGER_SBUS1_BAUD           100000
@@ -113,6 +122,7 @@ public:
         SerialProtocol_WindVane = 21,
         SerialProtocol_SLCAN = 22,
         SerialProtocol_RCIN = 23,
+        SerialProtocol_EFI_MS = 24                   // MegaSquirt EFI serial protocol
     };
 
     // get singleton instance

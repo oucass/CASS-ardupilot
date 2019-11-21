@@ -999,7 +999,7 @@ def write_UART_config(f):
             f.write(
                 "#define HAL_%s_CONFIG { (BaseSequentialStream*) &SD%u, false, "
                 % (dev, n))
-            if mcu_series.startswith("STM32F1"):
+            if mcu_series.startswith("STM32F1") or mcu_series.startswith("STM32F3"):
                 f.write("%s, " % rts_line)
             else:
                 f.write("STM32_%s_RX_DMA_CONFIG, STM32_%s_TX_DMA_CONFIG, %s, " %
@@ -1030,6 +1030,10 @@ def write_UART_config(f):
 #define HAL_USE_SERIAL HAL_USE_SERIAL_USB
 #endif
 ''')
+    num_uarts = len(devlist)
+    if 'IOMCU_UART' in config:
+        num_uarts -= 1
+    f.write('#define HAL_UART_NUM_SERIAL_PORTS %u\n' % num_uarts)
 
 def write_UART_config_bootloader(f):
     '''write UART config defines'''

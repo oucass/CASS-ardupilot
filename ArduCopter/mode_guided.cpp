@@ -370,45 +370,9 @@ void ModeGuided::takeoff_run()
 {
     auto_takeoff_run();
     if (wp_nav->reached_wp_destination()) {
-        const Vector3f target = wp_nav->get_wp_destination();
+        const Vector3f& target = wp_nav->get_wp_destination();
         set_destination(target);
     }
-}
-
-void Mode::auto_takeoff_run()
-{
-    // if not armed set throttle to zero and exit immediately
-    if (!motors->armed() || !copter.ap.auto_armed) {
-        make_safe_spool_down();
-        wp_nav->shift_wp_origin_to_current_pos();
-        return;
-    }
-
-    // process pilot's yaw input
-    float target_yaw_rate = 0;
-    if (!copter.failsafe.radio) {
-        // get pilot's desired yaw rate
-        target_yaw_rate = get_pilot_desired_yaw_rate(channel_yaw->get_control_in());
-    }
-
-    // aircraft stays in landed state until rotor speed runup has finished
-    if (motors->get_spool_state() == AP_Motors::SpoolState::THROTTLE_UNLIMITED) {
-        set_land_complete(false);
-    } else {
-        wp_nav->shift_wp_origin_to_current_pos();
-    }
-
-    // set motors to full range
-    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
-
-    // run waypoint controller
-    copter.failsafe_terrain_set_status(wp_nav->update_wpnav());
-
-    // call z-axis position controller (wpnav should have already updated it's alt target)
-    copter.pos_control->update_z_controller();
-
-    // call attitude controller
-    auto_takeoff_attitude_run(target_yaw_rate);
 }
 
 // guided_pos_control_run - runs the guided position controller

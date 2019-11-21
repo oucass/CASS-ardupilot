@@ -48,10 +48,6 @@
 #include <AP_NavEKF2/AP_NavEKF2.h>
 #include <AP_NavEKF3/AP_NavEKF3.h>
 #include <AP_Mission/AP_Mission.h>         // Mission command library
-#include <AC_PID/AC_P.h>               // P library
-#include <AC_PID/AC_PID.h>             // PID library
-#include <AC_PID/AC_PI_2D.h>           // PI library (2-axis)
-#include <AC_PID/AC_PID_2D.h>          // PID library (2-axis)
 #include <AC_AttitudeControl/AC_AttitudeControl_Sub.h> // Attitude control library
 #include <AC_AttitudeControl/AC_PosControl_Sub.h>      // Position control library
 #include <AP_Motors/AP_Motors.h>          // AP Motors library
@@ -382,8 +378,7 @@ private:
 
     // Camera/Antenna mount tracking and stabilisation stuff
 #if MOUNT == ENABLED
-    // current_loc uses the baro/gps soloution for altitude rather than gps only.
-    AP_Mount camera_mount{current_loc};
+    AP_Mount camera_mount;
 #endif
 
     // AC_Fence library to reduce fly-aways
@@ -454,12 +449,11 @@ private:
     void Log_Write_Performance();
     void Log_Write_Attitude();
     void Log_Write_MotBatt();
-    void Log_Write_Event(Log_Event id);
-    void Log_Write_Data(uint8_t id, int32_t value);
-    void Log_Write_Data(uint8_t id, uint32_t value);
-    void Log_Write_Data(uint8_t id, int16_t value);
-    void Log_Write_Data(uint8_t id, uint16_t value);
-    void Log_Write_Data(uint8_t id, float value);
+    void Log_Write_Data(LogDataID id, int32_t value);
+    void Log_Write_Data(LogDataID id, uint32_t value);
+    void Log_Write_Data(LogDataID id, int16_t value);
+    void Log_Write_Data(LogDataID id, uint16_t value);
+    void Log_Write_Data(LogDataID id, float value);
     void Log_Sensor_Health();
     void Log_Write_GuidedTarget(uint8_t target_type, const Vector3f& pos_target, const Vector3f& vel_target);
     void Log_Write_Vehicle_Startup_Messages();

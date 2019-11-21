@@ -35,16 +35,28 @@ echo "Targets: $CI_BUILD_TARGET"
 echo "Compiler: $c_compiler"
 
 pymavlink_installed=0
+mavproxy_installed=0
 
 function run_autotest() {
     NAME="$1"
     BVEHICLE="$2"
     RVEHICLE="$3"
 
+    if [ $mavproxy_installed -eq 0 ]; then
+        echo "Installing MAVProxy"
+        pushd /tmp
+          git clone --recursive https://github.com/ardupilot/MAVProxy
+          pushd MAVProxy
+            python setup.py build install --user --force
+          popd
+        popd
+        mavproxy_installed=1
+        # now uninstall the version of pymavlink pulled in by MAVProxy deps:
+        pip uninstall -y pymavlink
+    fi
     if [ $pymavlink_installed -eq 0 ]; then
         echo "Installing pymavlink"
-        git submodule init
-        git submodule update
+        git submodule update --init --recursive
         (cd modules/mavlink/pymavlink && python setup.py build install --user)
         pymavlink_installed=1
     fi
@@ -112,6 +124,14 @@ for t in $CI_BUILD_TARGET; do
         $waf bootloader
         echo "Building f103 peripheral fw"
         $waf configure --board f103-GPS
+        $waf clean
+        $waf AP_Periph
+        echo "Building f303 bootloader"
+        $waf configure --board f303-GPS --bootloader
+        $waf clean
+        $waf bootloader
+        echo "Building f303 peripheral fw"
+        $waf configure --board f303-GPS
         $waf clean
         $waf AP_Periph
         continue

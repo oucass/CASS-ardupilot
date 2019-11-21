@@ -279,7 +279,12 @@ private:
     // angular error at which quad assistance is given
     AP_Int8 assist_angle;
     uint32_t angle_error_start_ms;
-    
+
+    // altitude to trigger assistance
+    AP_Int16 assist_alt;
+    uint32_t alt_error_start_ms;
+    bool in_alt_assist;
+
     // maximum yaw rate in degrees/second
     AP_Float yaw_rate_max;
 
@@ -512,6 +517,7 @@ private:
         OPTION_RESPECT_TAKEOFF_FRAME=(1<<3),
         OPTION_MISSION_LAND_FW_APPROACH=(1<<4),
         OPTION_FS_QRTL=(1<<5),
+        OPTION_IDLE_GOV_MANUAL=(1<<6),
     };
 
     AP_Float takeoff_failure_scalar;

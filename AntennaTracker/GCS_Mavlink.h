@@ -27,7 +27,6 @@ protected:
 
     bool set_home_to_current_location(bool lock) override WARN_IF_UNUSED;
     bool set_home(const Location& loc, bool lock) override WARN_IF_UNUSED;
-    uint64_t capabilities() const override;
 
     void send_nav_controller_output() const override;
     void send_pid_tuning() override;
@@ -39,6 +38,8 @@ private:
     void handleMessage(const mavlink_message_t &msg) override;
     bool handle_guided_request(AP_Mission::Mission_Command &cmd) override;
     void handle_change_alt_request(AP_Mission::Mission_Command &cmd) override;
+    void handle_set_attitude_target(const mavlink_message_t &msg);
+
     void send_global_position_int() override;
 
     MAV_MODE base_mode() const override;

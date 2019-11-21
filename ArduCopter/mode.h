@@ -247,7 +247,6 @@ public:
     bool set_mode(Mode::Number mode, ModeReason reason);
     void set_land_complete(bool b);
     GCS_Copter &gcs();
-    void Log_Write_Event(Log_Event id);
     void set_throttle_takeoff(void);
     float get_avoidance_adjusted_climbrate(float target_rate);
     uint16_t get_pilot_speed_dn(void);
@@ -262,6 +261,12 @@ class ModeAcro : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+
+    enum class Trainer {
+        OFF = 0,
+        LEVELING = 1,
+        LIMITED = 2,
+    };
 
     virtual void run() override;
 
@@ -515,7 +520,6 @@ protected:
     float get_pilot_desired_climb_rate_cms(void) const override;
     void get_pilot_desired_rp_yrate_cd(float &roll_cd, float &pitch_cd, float &yaw_rate_cds) override;
     void init_z_limits() override;
-    void Log_Write_Event(enum at_event id) override;
     void log_pids() override;
 };
 

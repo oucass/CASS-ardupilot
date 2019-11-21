@@ -900,7 +900,7 @@ const AP_Param::Info Plane::var_info[] = {
 #endif
 
     // @Group: RNGFND
-    // @Path: ../libraries/AP_RangeFinder/RangeFinder.cpp
+    // @Path: ../libraries/AP_RangeFinder/AP_RangeFinder.cpp
     GOBJECT(rangefinder,            "RNGFND", RangeFinder),
 
     // @Param: RNGFND_LANDING
@@ -1238,6 +1238,12 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Increment: 1
     // @User: Advanced
     AP_GROUPINFO("DSPOILER_AILMTCH", 21, ParametersG2, crow_flap_aileron_matching, 100),
+
+#if EFI_ENABLED
+    // @Group: EFI_
+    // @Path: ../libraries/AP_EFI/AP_EFI.cpp
+    AP_SUBGROUPINFO(efi, "EFI", 22, ParametersG2, AP_EFI),
+#endif
 
     AP_GROUPEND
 };

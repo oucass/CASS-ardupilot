@@ -1,6 +1,6 @@
 #include "Rover.h"
 
-#include <AP_RangeFinder/RangeFinder_Backend.h>
+#include <AP_RangeFinder/AP_RangeFinder_Backend.h>
 #include <AP_VisualOdom/AP_VisualOdom.h>
 
 // check for new compass data - 10Hz
@@ -123,7 +123,6 @@ void Rover::read_rangefinders(void)
 void Rover::init_proximity(void)
 {
     g2.proximity.init();
-    g2.proximity.set_rangefinder(&rangefinder);
 }
 
 /*

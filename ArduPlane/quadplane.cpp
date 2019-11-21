@@ -329,7 +329,7 @@ const AP_Param::GroupInfo QuadPlane::var_info[] = {
     // @Param: OPTIONS
     // @DisplayName: quadplane options
     // @Description: This provides a set of additional control options for quadplanes. LevelTransition means that the wings should be held level to within LEVEL_ROLL_LIMIT degrees during transition to fixed wing flight, and the vehicle will not use the vertical lift motors to climb during the transition. If AllowFWTakeoff bit is not set then fixed wing takeoff on quadplanes will instead perform a VTOL takeoff. If AllowFWLand bit is not set then fixed wing land on quadplanes will instead perform a VTOL land. If respect takeoff frame is not set the vehicle will interpret all takeoff waypoints as an altitude above the corrent position. When Use QRTL is set it will replace QLAND with QRTL for failsafe actions when in VTOL modes.
-    // @Bitmask: 0:LevelTransition,1:AllowFWTakeoff,2:AllowFWLand,3:Respect takeoff frame types,4:Use a fixed wing approach for VTOL landings,5:Use QRTL instead of QLAND for failsafe when in VTOL modes.
+    // @Bitmask: 0:LevelTransition,1:AllowFWTakeoff,2:AllowFWLand,3:Respect takeoff frame types,4:Use a fixed wing approach for VTOL landings,5:Use QRTL instead of QLAND for failsafe when in VTOL modes,6:Use idle governor in MANUAL
     AP_GROUPINFO("OPTIONS", 58, QuadPlane, options, 0),
 
     AP_SUBGROUPEXTENSION("",59, QuadPlane, var_info2),
@@ -380,7 +380,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
 
 #if QAUTOTUNE_ENABLED
     // @Group: AUTOTUNE_
-    // @Path: qautotune.cpp
+    // @Path: ../libraries/AC_AutoTune/AC_AutoTune.cpp
     AP_SUBGROUPINFO(qautotune, "AUTOTUNE_",  6, QuadPlane, QAutoTune),
 #endif
 
@@ -460,6 +460,15 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Increment: 1
     // @User: Advanced
     AP_GROUPINFO("TKOFF_ARSP_LIM", 15, QuadPlane, maximum_takeoff_airspeed, 0),
+
+    // @Param: ASSIST_ALT
+    // @DisplayName: Quadplane assistance altitude
+    // @Description: This is the altitude below which quadplane assistance will be triggered. This acts the same way as Q_ASSIST_ANGLE and Q_ASSIST_SPEED, but triggers if the aircraft drops below the given altitude while the VTOL motors are not running. A value of zero disables this feature. The altutude is calculated as being above ground level. The height above ground is given from a Lidar used if available and RNGFND_LANDING=1. Otherwise it comes from terrain data if TERRAIN_FOLLOW=1 and comes from height above home otherwise.
+    // @Units: m
+    // @Range: 0 120
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("ASSIST_ALT", 16, QuadPlane, assist_alt, 0),
 
     AP_GROUPEND
 };
@@ -1377,11 +1386,37 @@ bool QuadPlane::assistance_needed(float aspeed)
         angle_error_start_ms = 0;
         return false;
     }
+
     if (aspeed < assist_speed) {
         // assistance due to Q_ASSIST_SPEED
         in_angle_assist = false;
         angle_error_start_ms = 0;
         return true;
+    }
+
+    const uint32_t now = AP_HAL::millis();
+
+    /*
+      optional assistance when altitude is too close to the ground
+     */
+    if (assist_alt > 0) {
+        float height_above_ground = plane.relative_ground_altitude(plane.g.rangefinder_landing);
+        if (height_above_ground < assist_alt) {
+            if (alt_error_start_ms == 0) {
+                alt_error_start_ms = now;
+            }
+            if (now - alt_error_start_ms > 500) {
+                // we've been below assistant alt for 0.5s
+                if (!in_alt_assist) {
+                    in_alt_assist = true;
+                    gcs().send_text(MAV_SEVERITY_INFO, "Alt assist %.1fm", height_above_ground);
+                }
+                return true;
+            }
+        } else {
+            in_alt_assist = false;
+            alt_error_start_ms = 0;
+        }
     }
 
     if (assist_angle <= 0) {
@@ -1412,7 +1447,7 @@ bool QuadPlane::assistance_needed(float aspeed)
         in_angle_assist = false;
         return false;
     }
-    const uint32_t now = AP_HAL::millis();
+
     if (angle_error_start_ms == 0) {
         angle_error_start_ms = now;
     }
@@ -1567,7 +1602,7 @@ void QuadPlane::update_transition(void)
         plane.rollController.reset_I();
 
         // give full authority to attitude control
-        attitude_control->set_throttle_mix_max();
+        attitude_control->set_throttle_mix_max(1.0f);
         break;
     }
         
@@ -3099,7 +3134,7 @@ void QuadPlane::update_throttle_thr_mix(void)
         bool descent_not_demanded = pos_control->get_desired_velocity().z >= 0.0f;
 
         if ( large_angle_request || large_angle_error || accel_moving || descent_not_demanded) {
-            attitude_control->set_throttle_mix_max();
+            attitude_control->set_throttle_mix_max(1.0);
         } else {
             attitude_control->set_throttle_mix_min();
         }
