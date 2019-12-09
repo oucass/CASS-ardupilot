@@ -120,23 +120,24 @@ void AP_LandingGear::set_position(LandingGearCommand cmd)
 void AP_LandingGear::deploy()
 {
     // set servo PWM to deployed position
-    SRV_Channels::set_output_limit(SRV_Channel::k_landing_gear_control, SRV_Channel::SRV_CHANNEL_LIMIT_MAX);
+    SRV_Channels::set_output_limit(SRV_Channel::k_landing_gear_control, SRV_Channel::Limit::MAX);
+
+    // send message only if output has been configured
+    if (!_deployed &&
+        SRV_Channels::function_assigned(SRV_Channel::k_landing_gear_control)) {
+        gcs().send_text(MAV_SEVERITY_INFO, "LandingGear: DEPLOY");
+    }
 
     // set deployed flag
     _deployed = true;
     _have_changed = true;
-
-    // send message only if output has been configured
-    if (SRV_Channels::function_assigned(SRV_Channel::k_landing_gear_control)) {
-        gcs().send_text(MAV_SEVERITY_INFO, "LandingGear: DEPLOY");
-    }
 }
 
 /// retract - retract landing gear
 void AP_LandingGear::retract()
 {
     // set servo PWM to retracted position
-    SRV_Channels::set_output_limit(SRV_Channel::k_landing_gear_control, SRV_Channel::SRV_CHANNEL_LIMIT_MIN);
+    SRV_Channels::set_output_limit(SRV_Channel::k_landing_gear_control, SRV_Channel::Limit::MIN);
 
     // reset deployed flag
     _deployed = false;

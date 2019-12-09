@@ -99,13 +99,13 @@ void Rover::init_ardupilot()
     rangefinder.init(ROTATION_NONE);
 
     // init proximity sensor
-    init_proximity();
+    g2.proximity.init();
 
     // init beacons used for non-gps position estimation
-    init_beacon();
+    g2.beacon.init();
 
-    // init visual odometry
-    init_visual_odom();
+    // init library used for visual position estimation
+    g2.visual_odom.init();
 
     // and baro for EKF
     barometer.set_log_baro_bit(MASK_LOG_IMU);
@@ -199,9 +199,7 @@ void Rover::startup_ground(void)
 #endif
 
 #ifdef ENABLE_SCRIPTING
-    if (!g2.scripting.init()) {
-        gcs().send_text(MAV_SEVERITY_ERROR, "Scripting failed to start");
-    }
+    g2.scripting.init();
 #endif // ENABLE_SCRIPTING
 
     // we don't want writes to the serial port to cause us to pause

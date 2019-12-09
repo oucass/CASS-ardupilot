@@ -46,6 +46,7 @@ const AP_Param::GroupInfo AP_MotorsHeli_Dual::var_info[] = {
     // @Description: Feed-forward compensation to automatically add yaw input when differential collective pitch is applied.
     // @Range: -10 10
     // @Increment: 0.1
+    // @User: Standard
     AP_GROUPINFO("DCP_YAW", 11, AP_MotorsHeli_Dual, _dcp_yaw_effect, 0),
 
     // @Param: YAW_SCALER
@@ -53,6 +54,7 @@ const AP_Param::GroupInfo AP_MotorsHeli_Dual::var_info[] = {
     // @Description: Scaler for mixing yaw into roll or pitch.
     // @Range: -10 10
     // @Increment: 0.1
+    // @User: Standard
     AP_GROUPINFO("YAW_SCALER", 12, AP_MotorsHeli_Dual, _yaw_scaler, 1.0f),
 
     // Indices 13-15 were used by RSC_PWM_MIN, RSC_PWM_MAX and RSC_PWM_REV and should not be used
@@ -330,6 +332,9 @@ void AP_MotorsHeli_Dual::calculate_armed_scalars()
         _main_rotor._rsc_mode.save();
         _heliflags.save_rsc_mode = false;
     }
+
+    // set bailout ramp time
+    _main_rotor.use_bailout_ramp_time(_heliflags.enable_bailout);
 }
 
 // calculate_scalars
@@ -449,10 +454,10 @@ void AP_MotorsHeli_Dual::update_motor_control(RotorControlState state)
 
     if (state == ROTOR_CONTROL_STOP) {
         // set engine run enable aux output to not run position to kill engine when disarmed
-        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::SRV_CHANNEL_LIMIT_MIN);
+        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::Limit::MIN);
     } else {
         // else if armed, set engine run enable output to run position
-        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::SRV_CHANNEL_LIMIT_MAX);
+        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::Limit::MAX);
     }
 
     // Check if rotors are run-up

@@ -112,6 +112,7 @@ AP_BattMonitor::init()
             case AP_BattMonitor_Params::BattMonitor_TYPE_ANALOG_VOLTAGE_AND_CURRENT:
                 drivers[instance] = new AP_BattMonitor_Analog(*this, state[instance], _params[instance]);
                 break;
+#if HAL_BATTMON_SMBUS_ENABLE
             case AP_BattMonitor_Params::BattMonitor_TYPE_SOLO:
                 drivers[instance] = new AP_BattMonitor_SMBus_Solo(*this, state[instance], _params[instance],
                                                                   hal.i2c_mgr->get_device(AP_BATTMONITOR_SMBUS_BUS_INTERNAL, AP_BATTMONITOR_SMBUS_I2C_ADDR,
@@ -122,6 +123,7 @@ AP_BattMonitor::init()
                                                                     hal.i2c_mgr->get_device(AP_BATTMONITOR_SMBUS_BUS_EXTERNAL, AP_BATTMONITOR_SMBUS_I2C_ADDR,
                                                                                             100000, true, 20));
                 break;
+#endif // HAL_BATTMON_SMBUS_ENABLE
             case AP_BattMonitor_Params::BattMonitor_TYPE_BEBOP:
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BEBOP || CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DISCO
                 drivers[instance] = new AP_BattMonitor_Bebop(*this, state[instance], _params[instance]);
@@ -140,12 +142,14 @@ AP_BattMonitor::init()
             case AP_BattMonitor_Params::BattMonitor_TYPE_Sum:
                 drivers[instance] = new AP_BattMonitor_Sum(*this, state[instance], _params[instance], instance);
                 break;
+#if HAL_BATTMON_FUEL_ENABLE
             case AP_BattMonitor_Params::BattMonitor_TYPE_FuelFlow:
                 drivers[instance] = new AP_BattMonitor_FuelFlow(*this, state[instance], _params[instance]);
                 break;
             case AP_BattMonitor_Params::BattMonitor_TYPE_FuelLevel_PWM:
                 drivers[instance] = new AP_BattMonitor_FuelLevel_PWM(*this, state[instance], _params[instance]);
                 break;
+#endif // HAL_BATTMON_FUEL_ENABLE
             case AP_BattMonitor_Params::BattMonitor_TYPE_NONE:
             default:
                 break;
@@ -465,12 +469,10 @@ void AP_BattMonitor::checkPoweringOff(void)
             AP_Notify::flags.powering_off = true;
 
             // Send a Mavlink broadcast announcing the shutdown
-            mavlink_message_t msg;
             mavlink_command_long_t cmd_msg{};
             cmd_msg.command = MAV_CMD_POWER_OFF_INITIATED;
             cmd_msg.param1 = i+1;
-            mavlink_msg_command_long_encode(mavlink_system.sysid, MAV_COMP_ID_ALL, &msg, &cmd_msg);
-            GCS_MAVLINK::send_to_components(msg);
+            GCS_MAVLINK::send_to_components(MAVLINK_MSG_ID_COMMAND_LONG, (char*)&cmd_msg, sizeof(cmd_msg));
             gcs().send_text(MAV_SEVERITY_WARNING, "Vehicle %d battery %d is powering off", mavlink_system.sysid, i+1);
 
             // only send this once

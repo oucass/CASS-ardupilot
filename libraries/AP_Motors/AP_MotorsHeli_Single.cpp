@@ -51,7 +51,7 @@ const AP_Param::GroupInfo AP_MotorsHeli_Single::var_info[] = {
     // @Description: Feed-forward compensation to automatically add rudder input when collective pitch is increased. Can be positive or negative depending on mechanics.
     // @Range: -10 10
     // @Increment: 0.1
-    // @User: Advanced
+    // @User: Standard
     AP_GROUPINFO("COLYAW", 8,  AP_MotorsHeli_Single, _collective_yaw_effect, 0),
 
     // @Param: FLYBAR_MODE
@@ -283,6 +283,10 @@ void AP_MotorsHeli_Single::calculate_armed_scalars()
         _main_rotor._rsc_mode.save();
         _heliflags.save_rsc_mode = false;
     }
+
+    // set bailout ramp time
+    _main_rotor.use_bailout_ramp_time(_heliflags.enable_bailout);
+    _tail_rotor.use_bailout_ramp_time(_heliflags.enable_bailout);
 }
 
 // calculate_scalars - recalculates various scalers used.
@@ -354,10 +358,10 @@ void AP_MotorsHeli_Single::update_motor_control(RotorControlState state)
 
     if (state == ROTOR_CONTROL_STOP){
         // set engine run enable aux output to not run position to kill engine when disarmed
-        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::SRV_CHANNEL_LIMIT_MIN);
+        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::Limit::MIN);
     } else {
         // else if armed, set engine run enable output to run position
-        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::SRV_CHANNEL_LIMIT_MAX);
+        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::Limit::MAX);
     }
 
     // Check if both rotors are run-up, tail rotor controller always returns true if not enabled
@@ -413,13 +417,13 @@ void AP_MotorsHeli_Single::move_actuators(float roll_out, float pitch_out, float
     }
 
     // ensure not below landed/landing collective
-    if (_heliflags.landing_collective && collective_out < _collective_mid_pct) {
+    if (_heliflags.landing_collective && collective_out < _collective_mid_pct && !_heliflags.in_autorotation) {
         collective_out = _collective_mid_pct;
         limit.throttle_lower = true;
     }
 
-    // if servo output not in manual mode, process pre-compensation factors
-    if (_servo_mode == SERVO_CONTROL_MODE_AUTOMATED) {
+    // if servo output not in manual mode and heli is not in autorotation, process pre-compensation factors
+    if (_servo_mode == SERVO_CONTROL_MODE_AUTOMATED && !_heliflags.in_autorotation) {
         // rudder feed forward based on collective
         // the feed-forward is not required when the motor is stopped or at idle, and thus not creating torque
         // also not required if we are using external gyro

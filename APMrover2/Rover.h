@@ -161,15 +161,6 @@ private:
     // AP_RPM Module
     AP_RPM rpm_sensor;
 
-    // Inertial Navigation EKF
-#if AP_AHRS_NAVEKF_AVAILABLE
-    NavEKF2 EKF2{&ahrs, rangefinder};
-    NavEKF3 EKF3{&ahrs, rangefinder};
-    AP_AHRS_NavEKF ahrs{EKF2, EKF3};
-#else
-    AP_AHRS_DCM ahrs;
-#endif
-
     // Arming/Disarming management class
     AP_Arming_Rover arming;
 
@@ -384,12 +375,9 @@ private:
     // sensors.cpp
     void update_compass(void);
     void compass_save(void);
-    void init_beacon();
-    void init_visual_odom();
     void update_wheel_encoder();
     void accel_cal_update(void);
     void read_rangefinders(void);
-    void init_proximity();
     void read_airspeed();
     void rpm_update(void);
 

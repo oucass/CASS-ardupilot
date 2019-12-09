@@ -79,25 +79,24 @@ AP_Scripting::AP_Scripting() {
     _singleton = this;
 }
 
-bool AP_Scripting::init(void) {
+void AP_Scripting::init(void) {
     if (!_enable) {
-        return true;
+        return;
     }
 
     if (!hal.scheduler->thread_create(FUNCTOR_BIND_MEMBER(&AP_Scripting::thread, void),
                                       "Scripting", SCRIPTING_STACK_SIZE, AP_HAL::Scheduler::PRIORITY_SCRIPTING, 0)) {
         gcs().send_text(MAV_SEVERITY_CRITICAL, "Could not create scripting stack (%d)", SCRIPTING_STACK_SIZE);
-        _enable = 0;
-        return false;
+        gcs().send_text(MAV_SEVERITY_ERROR, "Scripting failed to start");
+        _init_failed = true;
     }
-
-    return true;
 }
 
 void AP_Scripting::thread(void) {
     lua_scripts *lua = new lua_scripts(_script_vm_exec_count, _script_heap_size, _debug_level);
-    if (lua == nullptr) {
+    if (lua == nullptr || !lua->heap_allocated()) {
         gcs().send_text(MAV_SEVERITY_CRITICAL, "Unable to allocate scripting memory");
+        _init_failed = true;
         return;
     }
     lua->run();

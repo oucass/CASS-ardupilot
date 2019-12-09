@@ -3,6 +3,11 @@ echo "---------- $0 start ----------"
 set -e
 set -x
 
+if [ $EUID == 0 ]; then
+    echo "Please do not run this script as root; don't sudo it!"
+    exit 1
+fi
+
 OPT="/opt"
 BASE_PKGS="build-essential ccache g++ gawk git make wget"
 PYTHON_PKGS="future lxml pymavlink MAVProxy pexpect"
@@ -26,7 +31,7 @@ fi
 # (see https://launchpad.net/gcc-arm-embedded/)
 ARM_ROOT="gcc-arm-none-eabi-6-2017-q2-update"
 ARM_TARBALL="$ARM_ROOT-linux.tar.bz2"
-ARM_TARBALL_URL="http://firmware.ardupilot.org/Tools/STM32-tools/$ARM_TARBALL"
+ARM_TARBALL_URL="https://firmware.ardupilot.org/Tools/STM32-tools/$ARM_TARBALL"
 
 # Ardupilot Tools
 ARDUPILOT_TOOLS="Tools/autotest"

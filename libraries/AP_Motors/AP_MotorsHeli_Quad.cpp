@@ -120,6 +120,9 @@ void AP_MotorsHeli_Quad::calculate_armed_scalars()
         _main_rotor._rsc_mode.save();
         _heliflags.save_rsc_mode = false;
     }
+
+    // set bailout ramp time
+    _main_rotor.use_bailout_ramp_time(_heliflags.enable_bailout);
 }
 
 // calculate_scalars
@@ -186,10 +189,10 @@ void AP_MotorsHeli_Quad::update_motor_control(RotorControlState state)
 
     if (state == ROTOR_CONTROL_STOP) {
         // set engine run enable aux output to not run position to kill engine when disarmed
-        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::SRV_CHANNEL_LIMIT_MIN);
+        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::Limit::MIN);
     } else {
         // else if armed, set engine run enable output to run position
-        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::SRV_CHANNEL_LIMIT_MAX);
+        SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::Limit::MAX);
     }
 
     // Check if rotors are run-up

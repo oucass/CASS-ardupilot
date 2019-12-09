@@ -1,5 +1,5 @@
 /*
-   Please contribute your ideas! See http://dev.ardupilot.org for details
+   Please contribute your ideas! See https://dev.ardupilot.org for details
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,13 @@
 #include <AP_Param/AP_Param.h>
 
 #ifdef HAL_UART_NUM_SERIAL_PORTS
+#if HAL_UART_NUM_SERIAL_PORTS >= 4
 #define SERIALMANAGER_NUM_PORTS HAL_UART_NUM_SERIAL_PORTS
+#else
+// we need a minimum of 4 to allow for a GPS due to the odd ordering
+// of hal.uartB as SERIAL3
+#define SERIALMANAGER_NUM_PORTS 4
+#endif
 #else
 // assume max 8 ports
 #define SERIALMANAGER_NUM_PORTS 8
@@ -45,6 +51,10 @@
 #define AP_SERIALMANAGER_MAVLINK_BAUD           57600
 #define AP_SERIALMANAGER_MAVLINK_BUFSIZE_RX     128
 #define AP_SERIALMANAGER_MAVLINK_BUFSIZE_TX     256
+
+// LTM buffer sizes
+#define AP_SERIALMANAGER_LTM_BUFSIZE_RX         0
+#define AP_SERIALMANAGER_LTM_BUFSIZE_TX         32
 
 // FrSky default baud rates, use default buffer sizes
 #define AP_SERIALMANAGER_FRSKY_D_BAUD           9600
@@ -122,7 +132,8 @@ public:
         SerialProtocol_WindVane = 21,
         SerialProtocol_SLCAN = 22,
         SerialProtocol_RCIN = 23,
-        SerialProtocol_EFI_MS = 24                   // MegaSquirt EFI serial protocol
+        SerialProtocol_EFI_MS = 24,                   // MegaSquirt EFI serial protocol
+        SerialProtocol_LTM_Telem = 25,
     };
 
     // get singleton instance
@@ -170,6 +181,8 @@ public:
     // accessors for AP_Periph to set baudrate and type
     void set_protocol_and_baud(uint8_t sernum, enum SerialProtocol protocol, uint32_t baudrate);
 
+    static uint32_t map_baudrate(int32_t rate);
+
     // parameter var table
     static const struct AP_Param::GroupInfo var_info[];
 
@@ -193,8 +206,6 @@ private:
     // instance-nth UART which is running protocol protocol
     const UARTState *find_protocol_instance(enum SerialProtocol protocol,
                                       uint8_t instance) const;
-
-    uint32_t map_baudrate(int32_t rate) const;
 
     // protocol_match - returns true if the protocols match
     bool protocol_match(enum SerialProtocol protocol1, enum SerialProtocol protocol2) const;

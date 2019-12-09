@@ -118,6 +118,7 @@ class ArmedAtEndOfTestException(ErrorException):
 class Context(object):
     def __init__(self):
         self.parameters = []
+        self.sitl_commandline_customised = False
 
 # https://stackoverflow.com/questions/616645/how-do-i-duplicate-sys-stdout-to-a-log-file-in-python
 class TeeBoth(object):
@@ -446,6 +447,28 @@ class AutoTest(ABC):
         self.set_streamrate(self.sitl_streamrate())
         self.progress("Reboot complete")
 
+    def customise_SITL_commandline(self, customisations):
+        '''customisations could be "--uartF=sim:nmea" '''
+        self.contexts[-1].sitl_commandline_customised = True
+        self.stop_SITL()
+        self.start_SITL(customisations=customisations, wipe=False)
+        self.wait_heartbeat()
+        # we also need to wait for MAVProxy to requests streams again
+        # - in particular, RC_CHANNELS.
+        m = self.mav.recv_match(type='RC_CHANNELS', blocking=True, timeout=15)
+        if m is None:
+            raise NotAchievedException("No RC_CHANNELS message after restarting SITL")
+
+    def reset_SITL_commandline(self):
+        self.progress("Resetting SITL commandline to default")
+        self.stop_SITL()
+        self.start_SITL(wipe=False)
+        self.progress("Reset SITL commandline to default")
+
+    def stop_SITL(self):
+        self.progress("Stopping SITL")
+        util.pexpect_close(self.sitl)
+
     def close(self):
         """Tidy up after running all tests."""
         if self.use_map:
@@ -454,7 +477,7 @@ class AutoTest(ABC):
 
         self.mav.close()
         util.pexpect_close(self.mavproxy)
-        util.pexpect_close(self.sitl)
+        self.stop_SITL()
 
         valgrind_log = util.valgrind_log_filepath(binary=self.binary,
                                                   model=self.frame)
@@ -603,6 +626,8 @@ class AutoTest(ABC):
         self.mavproxy.send("set shownoise 0\n")
         self.mavproxy.send("log download latest %s\n" % filename)
         self.mavproxy.expect("Finished downloading", timeout=timeout)
+        self.mavproxy.send("module unload log\n")
+        self.mavproxy.expect("Unloaded module log")
         self.drain_mav_unparsed()
         self.wait_heartbeat()
         self.wait_heartbeat()
@@ -616,7 +641,7 @@ class AutoTest(ABC):
             flist = glob.glob("logs/*.BIN")
             for e in ['BIN', 'bin', 'tlog']:
                 flist += glob.glob(os.path.join(logdir, '*.%s' % e))
-            print("Uploading %u logs to http://firmware.ardupilot.org/CI-Logs/%s" % (len(flist), datedir))
+            print("Uploading %u logs to https://firmware.ardupilot.org/CI-Logs/%s" % (len(flist), datedir))
             cmd = ['rsync', '-avz'] + flist + ['cilogs@autotest.ardupilot.org::CI-Logs/%s/' % datedir]
             subprocess.call(cmd)
 
@@ -2203,6 +2228,8 @@ class AutoTest(ABC):
                           self.get_exception_stacktrace(e))
             ex = e
         self.test_timings[desc] = time.time() - start_time
+        if self.contexts[-1].sitl_commandline_customised:
+            self.reset_SITL_commandline()
         self.context_pop()
 
         passed = True
@@ -2273,6 +2300,28 @@ class AutoTest(ABC):
         self.progress("Waiting for Parameters")
         self.mavproxy.expect('Received [0-9]+ parameters')
 
+    def start_SITL(self, **sitl_args):
+        start_sitl_args = {
+            "breakpoints": self.breakpoints,
+            "disable_breakpoints": self.disable_breakpoints,
+            "defaults_file": self.defaults_filepath(),
+            "gdb": self.gdb,
+            "gdbserver": self.gdbserver,
+            "lldb": self.lldb,
+            "home": self.sitl_home(),
+            "model": self.frame,
+            "speedup": self.speedup,
+            "valgrind": self.valgrind,
+            "vicon": self.uses_vicon(),
+            "wipe": True,
+        }
+        start_sitl_args.update(**sitl_args)
+        self.progress("Starting SITL")
+        self.sitl = util.start_SITL(self.binary, **start_sitl_args)
+
+    def sitl_is_running(self):
+        return self.sitl.is_alive()
+
     def init(self):
         """Initilialize autotest feature."""
         self.check_test_syntax(test_file=self.test_filepath())
@@ -2283,20 +2332,7 @@ class AutoTest(ABC):
             self.frame = self.default_frame()
 
         self.progress("Starting simulator")
-        self.sitl = util.start_SITL(self.binary,
-                                    breakpoints=self.breakpoints,
-                                    disable_breakpoints=self.disable_breakpoints,
-                                    defaults_file=self.defaults_filepath(),
-                                    gdb=self.gdb,
-                                    gdbserver=self.gdbserver,
-                                    lldb=self.lldb,
-                                    home=self.sitl_home(),
-                                    model=self.frame,
-                                    speedup=self.speedup,
-                                    valgrind=self.valgrind,
-                                    vicon=self.uses_vicon(),
-                                    wipe=True,
-                                    )
+        self.start_SITL()
 
         self.start_mavproxy()
 
