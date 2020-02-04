@@ -258,7 +258,7 @@ void Copter::userhook_SuperSlowLoop()
                     var_wind_dir = sqrtf(var_wind_dir);
 
                     //Filter wind speed measurements
-                    if(var_gamma < 0.04f && alt > 4.0f){
+                    if(var_gamma < 0.08f && alt > 4.0f){
                         if(fabs(avgP)>0.03){
                             _wind_speed = wsA * sqrtf(tanf(acosf(cosf(avgP)*cosf(avgR)))) + wsB;
                         }
@@ -269,7 +269,7 @@ void Copter::userhook_SuperSlowLoop()
                     }
 
                     //Filter wind direction measurements
-                    if(var_wind_dir < 1.5f){
+                    if(var_wind_dir < 0.5f){
                         _wind_dir = wrap_360_cd((_yaw + body_wind_dir)*5729.6f);
                         // Send wind direction to the Flight control 
                         if(alt>4.0f && var_wind_dir<0.8f && fabs(avgP)+fabs(avgR)>0.05f){

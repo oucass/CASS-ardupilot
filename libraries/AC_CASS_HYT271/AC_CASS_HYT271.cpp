@@ -39,13 +39,13 @@ bool AC_CASS_HYT271::init(uint8_t busId, uint8_t i2cAddr)
     }
 
     // lower retries for run
-    _dev->set_retries(3);
+    _dev->set_retries(2);
 
     _dev->get_semaphore()->give();
 
     /* Request 25Hz update */
     // Max conversion time is 12 ms
-    _dev->register_periodic_callback(40000,
+    _dev->register_periodic_callback(70000,
                                      FUNCTOR_BIND_MEMBER(&AC_CASS_HYT271::_timer, void));
     return true;
 }
@@ -83,20 +83,22 @@ bool AC_CASS_HYT271::_collect(float &hum, float &temp)
     raw = (data[0] << 8) | data[1];
     raw = raw & 0x3FFF;
 
-    hum = (100.0 / (powf(2,14) - 1)) * (float)raw;
+    if(sem->take(HAL_SEMAPHORE_BLOCK_FOREVER)){
 
-    data[3] = (data[3] >> 2);
-    raw = (data[2] << 6) | data[3];
-    temp = (165.0 / (powf(2,14) - 1)) * (float)raw + 233.15f;
+        hum = (100.0 / (powf(2,14) - 1)) * (float)raw;
 
-    return true;  
+        data[3] = (data[3] >> 2);
+        raw = (data[2] << 6) | data[3];
+        temp = (165.0 / (powf(2,14) - 1)) * (float)raw + 233.15f;
+
+        sem->give(); 
+    }
+
+    return true; 
 }
 
 void AC_CASS_HYT271::_timer(void)
 {
-    if(sem->take(HAL_SEMAPHORE_BLOCK_FOREVER)){
         _healthy = _collect(_humidity, _temperature);   // Retreive data from the sensor
         _measure();                                     // Request a new measurement to the sensor
-        sem->give();                                    // End I2C communication
-    }
 }
