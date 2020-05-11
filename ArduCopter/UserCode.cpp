@@ -1,6 +1,7 @@
 #include "Copter.h"
 #include <utility>
 #include <SRV_Channel/SRV_Channel.h>
+#include <Filter/LowPassFilter2p.h>
 
 //Humidity sensor Params
 const int N_RH = 4;     //supports up to 4
@@ -10,21 +11,25 @@ const int N_imet = 4;   //supports up to 4
 
 //Fan control params
 //It will run the fan at SERVO_MAX, which can be set in the params list
-uint16_t fan_pwm_on = 100; // 40
+uint16_t fan_pwm_on = 100;
 uint16_t fan_pwm_off = 0;
 bool _fan_status;
 
 //Wind estimator Params
-float wsA = 32.8;               //Coefficient A of the linear wind speed equation, from calibration
-float wsB = -4.5;               //Coefficient B of the linear wind speed equation, from calibration
-const int N = 60;               //filter order
-float _wind_speed, _wind_dir;   //Estimated parameters
-float _roll, _pitch, _yaw;      //UAS attitude
-float var_temp_dir, var_temp_gamma;
-float _roll_sum, _pitch_sum, avgR, avgP;
-float mean_aux_dir[2],var_aux_dir[2];
-float mean_aux_speed[2],var_aux_speed[2];
-uint8_t k;                      //Number of measured wind dir/speed
+float _wind_speed, _wind_dir;
+float R13, R23, R33;
+float last_yrate;
+bool high_wind_flag;
+//g.wind_vane_wsA -> Coefficient A of the linear wind speed equation, from calibration
+//g.wind_vane_wsB -> Coefficient B of the linear wind speed equation, from calibration
+//g.wind_vane_min_roll -> Minimum roll angle that the wind vane will correct (too low and the copter will oscilate)
+//g.wind_vane_fine_rate -> Maximum yaw angle rate at which the Copter will rotate
+//g.wind_vane_fine_gain -> Wind vane gain: higher values will increase the resposivness
+
+//Declare digital LPF
+LowPassFilter2pFloat filt_thrvec_x;
+LowPassFilter2pFloat filt_thrvec_y;
+LowPassFilter2pFloat filt_thrvec_z;
 
 #ifdef USERHOOK_INIT
 void Copter::userhook_init()
@@ -33,16 +38,24 @@ void Copter::userhook_init()
     // this will be called once at start-up
 
     //Initialize Wind estimator
-    _wind_dir = 0.0f; _roll = 0.0f; _pitch = 0.0f; _yaw = 0.0f;
-    _roll_sum = 0.0f; _pitch_sum = 0.0f;
-    avgR = 0.0; avgP = 0.0;
-    var_temp_dir = 0.0f; var_temp_gamma = 0.0f;
     _wind_dir = 0.0f;  _wind_speed = 0.0f;
-    k = 0;
-    memset(mean_aux_dir,0.0f,sizeof(mean_aux_dir));
-    memset(var_aux_dir,1000.0f,sizeof(var_aux_dir));
-    memset(mean_aux_speed,0.0f,sizeof(mean_aux_speed));
-    memset(var_aux_speed,1000.0f,sizeof(var_aux_speed));
+    R13 = 0.0f; R23 = 0.0f;
+    last_yrate = 0;
+    high_wind_flag = false;
+
+    //Wind filter initialization
+    if(g.wind_vane_cutoff < 0.06){
+        //Min Fc = 0.06 for stable yaw
+        filt_thrvec_x.set_cutoff_frequency(20,0.06);
+        filt_thrvec_y.set_cutoff_frequency(20,0.06);
+        filt_thrvec_z.set_cutoff_frequency(20,0.06);
+    }
+    else{
+        //Initialize Butterworth filter
+        filt_thrvec_x.set_cutoff_frequency(20,g.wind_vane_cutoff);
+        filt_thrvec_y.set_cutoff_frequency(20,g.wind_vane_cutoff);
+        filt_thrvec_z.set_cutoff_frequency(20,g.wind_vane_cutoff);
+    }
 
     // Initialize Fan Control
     SRV_Channels::set_output_scaled(SRV_Channel::k_egg_drop, fan_pwm_off);
@@ -68,41 +81,36 @@ void Copter::userhook_50Hz()
 void Copter::userhook_MediumLoop()
 {
     #if CONFIG_HAL_BOARD != HAL_BOARD_SITL
-        // Read Temperature, Resistance and Health. Write sensors packet into the SD card
-        struct log_IMET pkt_temp = {
-            LOG_PACKET_HEADER_INIT(LOG_IMET_MSG),
-            time_stamp             : AP_HAL::micros64(),                //Store time in microseconds
-            fan_status             : _fan_status,                       //Store Fan on/off status
-            healthy1               : copter.CASS_Imet[0].healthy(),     //Store sensor health
-            healthy2               : copter.CASS_Imet[1].healthy(),
-            healthy3               : copter.CASS_Imet[2].healthy(),
-            healthy4               : copter.CASS_Imet[3].healthy(),
-            temperature1           : copter.CASS_Imet[0].temperature(), //Store iMet Temperature
-            temperature2           : copter.CASS_Imet[1].temperature(),
-            temperature3           : copter.CASS_Imet[2].temperature(),
-            temperature4           : copter.CASS_Imet[3].temperature(),
-            resist1                : copter.CASS_Imet[0].resistance(),  //Store iMet bead resistence
-            resist2                : copter.CASS_Imet[1].resistance(),
-            resist3                : copter.CASS_Imet[2].resistance(),
-            resist4                : copter.CASS_Imet[3].resistance()
-        }; 
+    // Read Temperature, Resistance and Health. Write sensors packet into the SD card
+    // Temperature Data Logger ///////////////////////////////////////////////////////////////////////////////////////////
+    struct log_IMET pkt_temp = {
+        LOG_PACKET_HEADER_INIT(LOG_IMET_MSG),
+        time_stamp             : AP_HAL::micros64(),                //Store time in microseconds
+        fan_status             : _fan_status,                       //Store Fan on/off status
+        healthy1               : copter.CASS_Imet[0].healthy(),     //Store sensor health
+        healthy2               : copter.CASS_Imet[1].healthy(),
+        healthy3               : copter.CASS_Imet[2].healthy(),
+        healthy4               : copter.CASS_Imet[3].healthy(),
+        temperature1           : copter.CASS_Imet[0].temperature(), //Store iMet Temperature
+        temperature2           : copter.CASS_Imet[1].temperature(),
+        temperature3           : copter.CASS_Imet[2].temperature(),
+        temperature4           : copter.CASS_Imet[3].temperature(),
+        resist1                : copter.CASS_Imet[0].resistance(),  //Store iMet bead resistence
+        resist2                : copter.CASS_Imet[1].resistance(),
+        resist3                : copter.CASS_Imet[2].resistance(),
+        resist4                : copter.CASS_Imet[3].resistance()
+    }; 
     #else
-        uint32_t m = AP_HAL::millis();
         float alt; float simT;
         copter.ahrs.get_relative_position_D_home(alt);
         alt = -1*alt;  
-        if(alt < 50){
-            simT = 300 - 2*alt*alt/2500;
-        }
-        else if(alt < 150){
-            simT = 298 - 0.01*alt;
-        }
-        else if(alt < 200){
-            simT = 296 + 2*alt*alt/40000;
+        if(alt < 900){
+            simT = 2.99e-11f*powf(alt,4) - 3.70454e-8*powf(alt,3) - 3.86806e-6*powf(alt,2) + 1.388511e-2*alt + 287.66;
         }
         else{
-            simT = 298;
+            simT = 289.64f;
         }
+        uint32_t m = AP_HAL::millis();
         // Write simulated sensors packet into the SD card
         struct log_IMET pkt_temp = {
             LOG_PACKET_HEADER_INIT(LOG_IMET_MSG),
@@ -112,14 +120,14 @@ void Copter::userhook_MediumLoop()
             healthy2               : copter.CASS_Imet[1].healthy(),
             healthy3               : copter.CASS_Imet[2].healthy(),
             healthy4               : copter.CASS_Imet[3].healthy(),
-            temperature1           : simT + sinf(0.0003f*m) * 0.001f,
-            temperature2           : simT + sinf(0.0004f*m) * 0.001f,
-            temperature3           : simT + sinf(0.0005f*m) * 0.001f,
-            temperature4           : simT + sinf(0.0006f*m) * 0.001f,
-            resist1                : copter.CASS_Imet[0].resistance(),
-            resist2                : copter.CASS_Imet[1].resistance(),
-            resist3                : copter.CASS_Imet[2].resistance(),
-            resist4                : copter.CASS_Imet[3].resistance()
+            temperature1           : simT + sinf(0.001f*float(m)) * 0.002f,
+            temperature2           : simT + sinf(0.0007f*float(m)) * 0.003f,
+            temperature3           : simT + sinf(0.0003f*float(m)) * 0.0025f,
+            temperature4           : simT + sinf(0.0005f*float(m)) * 0.0028f,
+            resist1                : -356.9892f*simT + 110935.3763f + sinf(0.001f*float(m)) * 0.002f,
+            resist2                : -356.9892f*simT + 110935.3763f + sinf(0.0007f*float(m)) * 0.003f,
+            resist3                : -356.9892f*simT + 110935.3763f + sinf(0.0003f*float(m)) * 0.0025f,
+            resist4                : -356.9892f*simT + 110935.3763f + sinf(0.0005f*float(m)) * 0.0028f
         };
     #endif
     copter.DataFlash.WriteBlock(&pkt_temp, sizeof(pkt_temp));   //Send package to SD card
@@ -129,8 +137,9 @@ void Copter::userhook_MediumLoop()
 #ifdef USERHOOK_SLOWLOOP
 void Copter::userhook_SlowLoop()
 {
-    #if CONFIG_HAL_BOARD != HAL_BOARD_SITL
+     #if CONFIG_HAL_BOARD != HAL_BOARD_SITL
         // Read Rel. Humidity, Temperature and Health. Write sensors packet into the SD card
+        // Relative Humidity Data Logger ///////////////////////////////////////////////////////////////////////////////////////////
         struct log_RH pkt_RH = {
             LOG_PACKET_HEADER_INIT(LOG_RH_MSG),
             time_stamp             : AP_HAL::micros64(),                        //Store time in microseconds
@@ -148,6 +157,15 @@ void Copter::userhook_SlowLoop()
             RHtemp4                : copter.CASS_HYT271[3].temperature()
         };
     #else
+        float alt; float simH;
+        copter.ahrs.get_relative_position_D_home(alt);
+        alt = -1*alt; 
+        if(alt < 900){
+            simH = -2.44407e-10f*powf(alt,4) + 3.88881064e-7*powf(alt,3) - 1.41943e-4*powf(alt,2) - 2.81895e-2*alt + 51.63;
+        }
+        else{
+            simH = 34.44f;
+        }
         uint32_t m = AP_HAL::millis();
         // Write sensors packet into the SD card
         struct log_RH pkt_RH = {
@@ -157,10 +175,10 @@ void Copter::userhook_SlowLoop()
             healthy2               : copter.CASS_HYT271[1].healthy(),
             healthy3               : copter.CASS_HYT271[2].healthy(),
             healthy4               : copter.CASS_HYT271[3].healthy(),
-            humidity1              : fabs(sinf(0.0003f*m) * 60.0f),
-            humidity2              : fabs(sinf(0.0004f*m) * 60.0f),
-            humidity3              : fabs(sinf(0.0005f*m) * 60.0f),
-            humidity4              : fabs(sinf(0.0006f*m) * 60.0f),
+            humidity1              : simH + sinf(0.1f*float(m)) * 0.02f,
+            humidity2              : simH + sinf(0.3f*float(m)) * 0.03f,
+            humidity3              : simH + sinf(0.5f*float(m)) * 0.025f,
+            humidity4              : simH + sinf(0.7f*float(m)) * 0.035f,
             RHtemp1                : 298.15f + sinf(0.0003f*m) * 2.0f,
             RHtemp2                : 298.15f + sinf(0.0004f*m) * 2.0f,
             RHtemp3                : 298.15f + sinf(0.0005f*m) * 2.0f,
@@ -174,28 +192,23 @@ void Copter::userhook_SlowLoop()
 #ifdef USERHOOK_SUPERSLOWLOOP
 void Copter::userhook_SuperSlowLoop()
 {
-    float var_gamma = 0.0f, var_wind_dir = 0.0f;
-    float body_wind_dir = 0.0f;
-    float speed = 0.0f, dist_to_wp = 0.0f;
-    Vector3f e_angles, vel_xyz;
-    float alt;
-
-    //copter.EKF2.getHAGL(alt);
-    //alt = copter.inertial_nav.get_altitude();
-    //copter.ahrs.get_hagl(alt);
-    copter.ahrs.get_relative_position_D_home(alt);
-    alt = -100.0f*alt;           // get AGL altitude in cm
-    //printf("Alt: %5.2f \n",alt);
-
-    //Start estimation after Copter takes off
+    //Run algo after Copter takes off
     if(!ap.land_complete && copter.position_ok()){ // !arming.is_armed(), !ap.land_complete, motors->armed()
 
-        //Fan Control    
+        //Fan Control ////////////////////////////////////////////////////////////////////////////////////////
+
+        //Get AGL altitude in cm
+        float alt;
+        copter.ahrs.get_relative_position_D_home(alt);
+        alt = -100.0f*alt;
+   
+        //Smart fan on/off logic
         if(alt > 185.0f && SRV_Channels::get_output_scaled(SRV_Channel::k_egg_drop) < 50){
             SRV_Channels::set_output_scaled(SRV_Channel::k_egg_drop, fan_pwm_on);
             _fan_status = true;
+            gcs().send_text(MAV_SEVERITY_INFO, "Scoop Fan activated");
             #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-                printf("FAN ON \n");  
+                printf("FAN ON \n");  //printf("PWM: %5.2f \n",var); //for debugging
             #endif
         }
         else{
@@ -207,133 +220,113 @@ void Copter::userhook_SuperSlowLoop()
                 #endif
             }
         }
-        //uint16_t pwm;
-        //SRV_Channels::get_output_pwm(SRV_Channel::k_egg_drop, pwm);
-        //printf("PWM: %5.2f \n",(float)pwm);
 
-        //Wind Estimator Algorithm
-        if(alt > 400.0f){
-            float aux; //Total area exposed to wind and aux variable
+        //Wind Estimator Algorithm //////////////////////////////////////////////////////////////////////////
 
-            //Current Attitude of the UAS
-            Vector3f _gyro_rate = copter.ins.get_gyro(0);
-            float _yaw_rate = _gyro_rate[2];
-            //printf("yaw: %5.2f \n",_yaw_rate);
-            copter.EKF2.getEulerAngles(-1,e_angles);
-            _roll = e_angles.x;
-            _pitch = e_angles.y;
-            _yaw = e_angles.z;
-            
+        //Get thurst vector elements from the rotation matrix
+        R13 = -1*copter.ahrs.get_rotation_body_to_ned().a.z;
+        R23 = -1*copter.ahrs.get_rotation_body_to_ned().b.z;
+        R33 = -1*copter.ahrs.get_rotation_body_to_ned().c.z;
 
-            //Estimated horizontal velocity calculated by the EKF2
-            //copter.EKF2.getVelNED(-1,vel_xyz);
-            vel_xyz = copter.inertial_nav.get_velocity();
-            speed = norm(vel_xyz.x,vel_xyz.y); // cm/s
-            dist_to_wp = copter.wp_nav->get_wp_distance_to_destination(); // cm (horizontally)
+        //Apply Butterworth LPF on each element
+        float thrvec_x, thrvec_y, thrvec_z;
+        thrvec_x = filt_thrvec_x.apply(R13);
+        thrvec_y = filt_thrvec_y.apply(R23);
+        thrvec_z = filt_thrvec_z.apply(R33);
 
-            if(speed < 120.0f && dist_to_wp < 500 && abs(_yaw_rate) < 0.25){
-                if(k <= N-1){
-                    // Roll and Pitch accumulation
-                    _roll_sum = _roll_sum + _roll;
-                    _pitch_sum = _pitch_sum + _pitch;
-                    aux = atan2f(sinf(_roll)*cosf(_pitch), -sinf(_pitch)*cosf(_roll));
-                    var_temp_dir = var_temp_dir + aux*aux;
-                    var_temp_gamma = var_temp_gamma + _pitch*_pitch;
-                    k = k + 1;
-                }
-                else{
-                    // 1st order Estimator, Mean and variance calculation
-                    avgP = _pitch_sum/N;
-                    avgR = _roll_sum/N;
-                    body_wind_dir = atan2f(sinf(avgR)*cosf(avgP), -sinf(avgP)*cosf(avgR));
-                    var_gamma = var_temp_gamma/N - avgP*avgP;
-                    var_wind_dir = var_temp_dir/N - body_wind_dir*body_wind_dir;
-                    if (var_wind_dir < 1e-6f){
-                        var_wind_dir = 0.0f;
-                    }
-                    if (var_gamma < 1e-6f){
-                        var_gamma = 0.0f;
-                    }
-                    var_gamma = sqrtf(var_gamma);
-                    var_wind_dir = sqrtf(var_wind_dir);
+        //Determine wind direction by trigonometry (thrust vector tilt)
+        float wind_psi = fmodf(atan2f(thrvec_y,thrvec_x),2*M_PI)*180.0f/M_PI;
 
-                    //Filter wind speed measurements
-                    if(var_gamma < 0.08f && alt > 4.0f){
-                        if(fabs(avgP)>0.03){
-                            _wind_speed = wsA * sqrtf(tanf(acosf(cosf(avgP)*cosf(avgR)))) + wsB;
-                        }
-                        else{
-                            _wind_speed = 0;
-                        }
-                        copter.cass_wind_speed = _wind_speed;
-                    }
+        //Get current target roll from the attitude controller
+        float troll = copter.wp_nav->get_roll()/100.0f;
 
-                    //Filter wind direction measurements
-                    if(var_wind_dir < 0.5f){
-                        _wind_dir = wrap_360_cd((_yaw + body_wind_dir)*5729.6f);
-                        // Send wind direction to the Flight control 
-                        if(alt>4.0f && var_wind_dir<0.8f && fabs(avgP)+fabs(avgR)>0.05f){
-                            copter.cass_wind_direction = _wind_dir;
-                        }
-                        if(fabs(avgP)+fabs(avgR) < 0.05f) 
-                        {
-                            // If wind speeds are very slow or none at all (TODO: use wind speed estimation)
-                            copter.cass_wind_direction = copter.wp_nav->get_yaw();
-                        }
-                    }
-                    // Singularities avoidance algorithm
-                    else if (var_wind_dir >= 1.5f && alt > 4.0f){
-                        if(fabs(avgR) > fabs(avgP)){
-                            if(avgR > 0){
-                                copter.cass_wind_direction = wrap_360_cd(copter.cass_wind_direction + 1000.0f);
-                            }
-                            else{
-                                copter.cass_wind_direction = wrap_360_cd(copter.cass_wind_direction - 1000.0f);
-                            }
-                        }
-                        else{
-                            if(avgP > 0){
-                                copter.cass_wind_direction = wrap_360_cd(copter.cass_wind_direction + 18000.0f);
-                            }
-                            else{
-                                copter.cass_wind_direction = copter.cass_wind_direction;
-                            }
-                        }
-                    }
-                    //Reset variables for next loop
-                    k = 0;
-                    _roll_sum = 0.0f;
-                    _pitch_sum = 0.0f;
-                    var_temp_dir = 0.0f;
-                    var_temp_gamma = 0.0f;
-                }
+        //Define a dead zone around zero roll
+        if(fabsf(troll) < g.wind_vane_min_roll){ last_yrate = 0; }
+
+        //Convert roll magnitude into desired yaw rate
+        float yrate = constrain_float((troll/5.0f)*g.wind_vane_fine_gain,-g.wind_vane_fine_rate,g.wind_vane_fine_rate);
+        last_yrate = 0.98f*last_yrate + 0.02f*yrate; //1st order LPF
+
+        //For large compensation use "wind_psi" estimator, for fine adjusments use "yrate" estimator
+        if(fabsf(troll)<g.wind_vane_min_roll){
+            //Set WVANE_MIN_ROLL to zero to disable the "yrate" estimator
+            //Output "y_rate" estimator
+            _wind_dir = copter.cass_wind_direction/100.0f + last_yrate;
+            _wind_dir = wrap_360_cd(_wind_dir*100.0f);
+        }
+        else{ 
+            //Output "wind_psi" estimator
+            _wind_dir = wrap_360_cd(wind_psi*100.0f);
+            last_yrate = 0;
+        }
+
+        //Estimate wind speed with filtered parameters
+        float thrvec_xy = safe_sqrt(thrvec_x*thrvec_x + thrvec_y*thrvec_y);
+        _wind_speed = g.wind_vane_wsA * safe_sqrt(fabsf(thrvec_xy/thrvec_z)) + g.wind_vane_wsB;
+        _wind_speed = _wind_speed < 0 ? 0.0f : _wind_speed;
+
+        //Get current velocity and horizontal distance to next waypoint
+        Vector3f vel_xyz = copter.inertial_nav.get_velocity();
+        float speed_xy = norm(vel_xyz.x,vel_xyz.y); // cm/s
+        float dist_to_wp = copter.wp_nav->get_wp_distance_to_destination(); // cm (horizontally)
+
+        //Wind vane is active when flying horizontally steady and wind speed is perceivable
+        if(speed_xy < 120.0f && dist_to_wp < 500 && _wind_speed > 0.6f){
+            //Min altitude at which the yaw command is sent
+            if(alt>400.0f){
+                //Send estimated wind direction to the autopilot
+                copter.cass_wind_direction = _wind_dir;
+                copter.cass_wind_speed = _wind_speed;
+            }
+            else{
+                //Send neutral values
+                copter.cass_wind_direction = copter.wp_nav->get_yaw();
+                copter.cass_wind_speed = 0.0f;
             }
         }
+        else{
+            //Reset 1st order filter
+            last_yrate = 0.0f;
+        }
+
+        //Switch to RTL automatically if wind speed is too high (in m/s)
+        //If tolerance is set to zero then function is disabled
+        if(!is_zero(g.wind_vane_spd_tol)){
+            if(_wind_speed > g.wind_vane_spd_tol && high_wind_flag == false){
+                gcs().send_text(MAV_SEVERITY_WARNING, "Switched to RTL due to very high wind");
+                copter.set_mode(RTL, MODE_REASON_UNKNOWN);
+                high_wind_flag = true;
+            }
+            else if(_wind_speed < (g.wind_vane_spd_tol - 3.0f) && high_wind_flag == true){
+                high_wind_flag = false;
+                gcs().send_text(MAV_SEVERITY_INFO, "High wind warning cleared");
+            }
+        }
+        
     }
     else{
-        //copter.wp_nav->turn_into_wind_heading = (float)copter.initial_armed_bearing;
+        //Reset all global parameters to default values
         copter.cass_wind_direction = (float)copter.initial_armed_bearing;
-        copter.cass_wind_speed = 0.0;
+        copter.cass_wind_speed = 0.0f;
         SRV_Channels::set_output_scaled(SRV_Channel::k_egg_drop, fan_pwm_off);
+        last_yrate = 0;
         _fan_status = false;
-        k = 0;
-        _roll_sum = 0.0f;
-        _pitch_sum = 0.0f;
-        var_temp_dir = 0.0f;
-        var_temp_gamma = 0.0f;
+        filt_thrvec_x.reset();
+        filt_thrvec_y.reset();
+        filt_thrvec_z.reset();
     }
+
+    //Wind Data Logger ///////////////////////////////////////////////////////////////////////////////////////////
 
     // Write wind direction packet into the SD card
     struct log_WIND pkt_wind_est = {
         LOG_PACKET_HEADER_INIT(LOG_WIND_MSG),
-        time_stamp             : AP_HAL::micros64(),// - _last_read_ms),
-        _wind_dir              : _wind_dir/100.0f,
+        time_stamp             : AP_HAL::micros64(),
+        _wind_dir              : _wind_dir/100,
         _wind_speed            : _wind_speed,
-        _wind_dir_var          : var_wind_dir,
-        _gamma_var             : var_gamma,
-        _roll_sum              : avgR,
-        _pitch_sum             : avgP,
-        _yaw                   : _yaw
+        _R13                   : R13,
+        _R23                   : R23,
+        _R33                   : R33
     };
     copter.DataFlash.WriteBlock(&pkt_wind_est, sizeof(pkt_wind_est));
 

@@ -206,26 +206,20 @@ void Copter::send_cass_imet(mavlink_channel_t chan) {
     }
     #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     // Variables simulation for IMET sensors
-        uint32_t m = AP_HAL::millis();
         float alt; float simT;
         copter.ahrs.get_relative_position_D_home(alt);
         alt = -1*alt;  
-        if(alt < 50){
-            simT = 300 - 2*alt*alt/2500;
-        }
-        else if(alt < 150){
-            simT = 298.5 - 0.01*alt;
-        }
-        else if(alt < 200){
-            simT = 295.875 + 2*alt*alt/40000;
+        if(alt < 900){
+            simT = 2.99e-11f*powf(alt,4) - 3.70454e-8*powf(alt,3) - 3.86806e-6*powf(alt,2) + 1.388511e-2*alt + 287.66;
         }
         else{
-            simT = 297.875;
+            simT = 289.64f;
         }
-        raw_sensor[0] = simT + sinf(0.1f*float(m)) * 0.02;
-        raw_sensor[1] = simT + sinf(0.15f*float(m)) * 0.03;
-        raw_sensor[2] = simT + sinf(0.12f*float(m)) * 0.025;
-        raw_sensor[3] = simT + sinf(0.18f*float(m)) * 0.028;
+        uint32_t m = AP_HAL::millis();
+        raw_sensor[0] = simT + sinf(0.001f*float(m)) * 0.002f;
+        raw_sensor[1] = simT + sinf(0.00075f*float(m)) * 0.003f;
+        raw_sensor[2] = simT + sinf(0.00052f*float(m)) * 0.0025f;
+        raw_sensor[3] = simT + sinf(0.00038f*float(m)) * 0.0028f;
         //printf("Imet temp: %5.2f \n",raw_sensor[0]);
     #endif 
     // Call Mavlink function and send CASS data
@@ -236,11 +230,27 @@ void Copter::send_cass_imet(mavlink_channel_t chan) {
         size,
         raw_sensor);
 
-    //packet.time_boot_ms = AP_HAL::millis();
-    //packet.app_datatype = (uint8_t)0;
-    //packet.app_datalength = size;
-    //mav_array_memcpy(packet.values, raw_sensor, size * sizeof(float));
-    //mavlink_msg_cass_sensor_raw_send_struct(chan, &packet);
+    // Send resistance measurements packet from the IMET sensor if there is still space
+    if(!HAVE_PAYLOAD_SPACE(chan, CASS_SENSOR_RAW)){
+        return;
+    }
+    for(uint8_t i=0; i<4; i++){
+        raw_sensor[i] = copter.CASS_Imet[i].resistance();
+    }
+    #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    // Variables simulation for IMET resistance measurements
+        for(uint8_t i=0; i<4; i++){
+            raw_sensor[i] = -356.9892f*raw_sensor[i] + 110935.3763f;
+        }
+        //printf("HYT271 temp: %5.2f \n",raw_sensor[0]);  
+    #endif
+    // Call Mavlink function and send CASS data
+    mavlink_msg_cass_sensor_raw_send(
+        chan,
+        AP_HAL::millis(),
+        2,
+        size,
+        raw_sensor);
 }
 
 void Copter::send_cass_hyt271(mavlink_channel_t chan) {
@@ -255,11 +265,20 @@ void Copter::send_cass_hyt271(mavlink_channel_t chan) {
     }
     #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     // Variables simulation for HYT271 humidity sensors
+        float alt; float simH;
+        copter.ahrs.get_relative_position_D_home(alt);
+        alt = -1*alt; 
+        if(alt < 900){
+            simH = -2.44407e-10f*powf(alt,4) + 3.88881064e-7*powf(alt,3) - 1.41943e-4*powf(alt,2) - 2.81895e-2*alt + 51.63;
+        }
+        else{
+            simH = 34.44f;
+        }
         uint32_t m = AP_HAL::millis();
-        raw_sensor[0] = 50 + sinf(m/100.0) * 25;
-        raw_sensor[1] = 1 + raw_sensor[0];
-        raw_sensor[2] = 1 + raw_sensor[1];
-        raw_sensor[3] = 1 + raw_sensor[2];
+        raw_sensor[0] = simH + sinf(0.1f*float(m)) * 0.02f;
+        raw_sensor[1] = simH + sinf(0.1f*float(m)) * 0.03f;
+        raw_sensor[2] = simH + sinf(0.1f*float(m)) * 0.025f;
+        raw_sensor[3] = simH + sinf(0.1f*float(m)) * 0.028f;
         //printf("HYT271 Humidity: %5.2f \n",raw_sensor[0]);     
     #endif
     // Call Mavlink function and send CASS data
@@ -269,40 +288,6 @@ void Copter::send_cass_hyt271(mavlink_channel_t chan) {
         1,
         size,
         raw_sensor);
-
-    //packet.time_boot_ms = AP_HAL::millis();
-    //packet.app_datatype = (uint8_t)1;
-    //packet.app_datalength = size;
-    //mav_array_memcpy(packet.values, raw_sensor, size * sizeof(float));
-    //mavlink_msg_cass_sensor_raw_send_struct(chan, &packet);
-
-    // Send extra temperature measurements packet from the HYT271 sensor if there is still space
-    if(!HAVE_PAYLOAD_SPACE(chan, CASS_SENSOR_RAW)){
-        return;
-    }
-    for(uint8_t i=0; i<4; i++){
-        raw_sensor[i] = copter.CASS_HYT271[i].temperature();
-    }
-    #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    // Variables simulation for HYT271 temperature sensors
-        raw_sensor[0] = 298.15 + sinf(m/200.0) * 15;
-        raw_sensor[1] = 1 + raw_sensor[0];
-        raw_sensor[2] = 1 + raw_sensor[1];
-        raw_sensor[3] = 1 + raw_sensor[2];   
-        //printf("HYT271 temp: %5.2f \n",raw_sensor[0]);  
-    #endif
-    // Call Mavlink function and send CASS data
-    mavlink_msg_cass_sensor_raw_send(
-        chan,
-        AP_HAL::millis(),
-        2,
-        size,
-        raw_sensor);
-
-    //packet.time_boot_ms = AP_HAL::millis();
-    //packet.app_datatype = (uint8_t)2;
-    //mav_array_memcpy(packet.values, raw_sensor, size * sizeof(float));
-    //mavlink_msg_cass_sensor_raw_send_struct(chan, &packet);
 }
 
 /*

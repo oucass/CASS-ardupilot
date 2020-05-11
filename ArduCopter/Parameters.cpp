@@ -380,6 +380,55 @@ const AP_Param::Info Copter::var_info[] = {
     // @User: Advanced
     GSCALAR(user_sensor8,    "USER_SENSORS8",          0),
 
+    // @Param: USER_SENSORS
+    // @DisplayName: Wind vane min roll
+    // @Description: Min roll in which the fine estimator kicks in
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(wind_vane_min_roll,    "WVANE_MIN_ROLL",          0),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: wind vane fine rate
+    // @Description: Rate at which the fine estimator will correct
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(wind_vane_fine_rate,    "WVANE_FINE_RATE",          1),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: wind vane fine gain
+    // @Description: Responsivness gain for fine corrections
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(wind_vane_fine_gain,    "WVANE_FINE_GAIN",          1),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: wind vane cuttoff
+    // @Description: Cutoff frequency of the wind filter (range 0.06 to 1.0 is recommended)
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(wind_vane_cutoff,    "WVANE_CUTOFF",          0.06f),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: Wind vane wsA
+    // @Description: Slope coefficient of the linear wind speed equation
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(wind_vane_wsA,    "WVANE_WSA",          32.8f),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: Wind vane wsB
+    // @Description: Independent term coefficient of the linear wind speed equation
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(wind_vane_wsB,    "WVANE_WSB",          -4.5f),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: Wind vane speed tolerance
+    // @Description: Maximum wind speed at which the RTL is triggered (in m/s)
+    // @Range: -2,147,483,648 to 2,147,483,647
+    // @User: Advanced
+    GSCALAR(wind_vane_spd_tol,    "WVANE_SPD_TOL",          22.0f),
+
 
     ////////////////////////////CASS////////////////////////////////////
 

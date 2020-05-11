@@ -228,15 +228,23 @@ public:
         k_param_fs_batt_curr_rtl,
         k_param_rtl_cone_slope, // 137
 
+        // CASS wind vane param ID
+        k_param_wind_vane_min_roll = 140,
+        k_param_wind_vane_fine_rate,
+        k_param_wind_vane_fine_gain,
+        k_param_wind_vane_cutoff,
+        k_param_wind_vane_wsA,
+        k_param_wind_vane_wsB, 
+
         //
         // 140: Sensor parameters
         //
-        k_param_imu = 140, // deprecated - can be deleted
-        k_param_battery_monitoring = 141,   // deprecated - can be deleted
-        k_param_volt_div_ratio, // deprecated - can be deleted
-        k_param_curr_amp_per_volt,  // deprecated - can be deleted
-        k_param_input_voltage,  // deprecated - can be deleted
-        k_param_pack_capacity,  // deprecated - can be deleted
+        // k_param_imu = 140, // deprecated - can be deleted
+        // k_param_battery_monitoring = 141,   // deprecated - can be deleted
+        // k_param_volt_div_ratio, // deprecated - can be deleted
+        // k_param_curr_amp_per_volt,  // deprecated - can be deleted
+        // k_param_input_voltage,  // deprecated - can be deleted
+        // k_param_pack_capacity,  // deprecated - can be deleted
         k_param_compass_enabled,
         k_param_compass,
         k_param_rangefinder_enabled_old, // deprecated
@@ -268,11 +276,15 @@ public:
         k_param_camera_mount,
         k_param_camera_mount2,      // deprecated
 
-        //
-        // Batery monitoring parameters
-        //
-        k_param_battery_volt_pin = 168, // deprecated - can be deleted
-        k_param_battery_curr_pin,   // 169 deprecated - can be deleted
+        // //
+        // // Batery monitoring parameters
+        // //
+        // k_param_battery_volt_pin = 168, // deprecated - can be deleted
+        // k_param_battery_curr_pin,   // 169 deprecated - can be deleted
+        
+        //More CASS wind vane params
+        k_param_wind_vane_spd_tol = 168,
+        k_param_wind_vane_reserved, // reserved for future use
 
         //
         // 170: Radio settings
@@ -435,7 +447,6 @@ public:
     AP_Int8         flight_mode_chan;
 
     //CASS Sensors ID
-
     AP_Int32        user_sensor1;
     AP_Int32        user_sensor2;
     AP_Int32        user_sensor3;
@@ -444,6 +455,15 @@ public:
     AP_Int32        user_sensor6;
     AP_Int32        user_sensor7;
     AP_Int32        user_sensor8;
+
+    //CASS wind vane param ID
+    AP_Float    wind_vane_min_roll;
+    AP_Float    wind_vane_fine_rate;
+    AP_Float    wind_vane_fine_gain;
+    AP_Float    wind_vane_cutoff;
+    AP_Float    wind_vane_wsA;
+    AP_Float    wind_vane_wsB;
+    AP_Float    wind_vane_spd_tol; 
 
     // Misc
     //
