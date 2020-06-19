@@ -26,7 +26,7 @@
 // Put your custom code into the UserCode.pde with function names matching those listed below and ensure the appropriate #define below is uncommented below
 //#define USERHOOK_INIT userhook_init();                      // for code to be run once at startup
 //#define USERHOOK_FASTLOOP userhook_FastLoop();            // for code to be run at 100hz
-//#define USERHOOK_50HZLOOP userhook_50Hz();                  // for code to be run at 50hz
-//#define USERHOOK_MEDIUMLOOP userhook_MediumLoop();        // for code to be run at 10hz
-//#define USERHOOK_SLOWLOOP userhook_SlowLoop();            // for code to be run at 3.3hz
-//#define USERHOOK_SUPERSLOWLOOP userhook_SuperSlowLoop();  // for code to be run at 1hz
+//#define USER_VPBATT_LOOP user_vpbatt_monitor();                  // for code to be run at 50hz
+//#define USER_TEMPERATURE_LOOP user_temperature_logger();        // for code to be run at 10hz
+//#define USER_HUMIDITY_LOOP user_humidity_logger();            // for code to be run at 3.3hz
+//#define USER_WVANE_LOOP user_wvane_logger();  // for code to be run at 1hz

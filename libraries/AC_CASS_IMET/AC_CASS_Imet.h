@@ -24,10 +24,10 @@
 /*=========================================================================
     CONFIG REGISTER
     -----------------------------------------------------------------------*/
-    #define ADS1115_REG_CONFIG_OS_MASK      (0x8000)
+    #define ADS1115_REG_CONFIG_OS_MASK      (0x80)
     #define ADS1115_REG_CONFIG_OS_SINGLE    (0x8000)  // Write: Set to start a single-conversion
-    #define ADS1115_REG_CONFIG_OS_BUSY      (0x0000)  // Read: Bit = 0 when conversion is in progress
-    #define ADS1115_REG_CONFIG_OS_NOTBUSY   (0x8000)  // Read: Bit = 1 when device is not performing a conversion
+    #define ADS1115_REG_CONFIG_OS_BUSY      (0x00)  // Read: Bit = 0 when conversion is in progress
+    #define ADS1115_REG_CONFIG_OS_NOTBUSY   (0x80)  // Read: Bit = 1 when device is not performing a conversion
 
     #define ADS1115_REG_CONFIG_MUX_MASK     (0x7000)
     #define ADS1115_REG_CONFIG_MUX_DIFF_0_1 (0x0000)  // Differential P = AIN0, N = AIN1 (default)
@@ -88,6 +88,10 @@
     #define ADS1115_REG_CONFIG_CQUE_2CONV   (0x0001)  // Assert ALERT/RDY after two conversions
     #define ADS1115_REG_CONFIG_CQUE_4CONV   (0x0002)  // Assert ALERT/RDY after four conversions
     #define ADS1115_REG_CONFIG_CQUE_NONE    (0x0003)  // Disable the comparator and put ALERT/RDY in high state (default)
+
+    #define ADS1115_CHANNELS_COUNT          8
+    #define ADS1115_READ_THERMISTOR         4
+    #define ADS1115_READ_SOURCE             5
 /*=========================================================================*/
 
 #include <AP_Common/AP_Common.h>
@@ -104,7 +108,7 @@ class AC_CASS_Imet {
 public:
     AC_CASS_Imet(void);
     ~AC_CASS_Imet(void){}
-    bool init(uint8_t busId, uint8_t i2cAddr);
+    bool init(uint8_t busId, uint8_t i2cAddr); // initialize sensor object
     float temperature(void) { return _temperature; } // temperature in kelvin
     float resistance(void) { return _resist; }   // voltage read by the ADCS
     bool healthy(void) { return _healthy; } // do we have a valid temperature reading?
@@ -112,19 +116,18 @@ public:
     void set_sensor_coeff(float *k);
 
 private:
-    AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev;
-    AP_HAL::Semaphore *sem;
-    bool flag;  //toggles between voltage and current measurements
-    float coeff[3]; //sensor coefficients
-    float adc_thermistor, adc_source;   //voltage source and thermistor form ADC
+    AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev; // I2C object for communication management
+    AP_HAL::Semaphore *sem; // iterruption object for data logging management
+    bool flag;  // toggles between voltage and current measurements
+    float coeff[3]; // sensor coefficients
+    float adc_thermistor, adc_source;   // voltage source and thermistor form ADC
     float _temperature; // degrees K
-    float _resist; //pseudo-resistance read by the ADC
+    float _resist; // pseudo-resistance read by the ADC
     bool _healthy; // we have a valid temperature reading to report
     uint16_t config; // Configuration to be sent to the ADC registers
     uint8_t runs; // Number of samples taken before getting an updated measurment of the source
-    bool _config_read_thermistor(void); // configure ADC to read thermistor
-    bool _config_read_source(void); // configure ADC to read source
-    bool _read_adc(float &value);
+    bool _start_conversion(uint8_t channel); // Configure and start conversion/measurement
+    bool _read_adc(float &value); // Request and retreive data from the sensor
     void _timer(void); // update the temperature, called at 20Hz
     void _calculate(float source, float thermistor); // calculate temperature using adc readings and coefficients
 };

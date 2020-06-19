@@ -66,17 +66,17 @@ const AP_Scheduler::Task Sub::scheduler_tasks[] = {
 #ifdef USERHOOK_FASTLOOP
     SCHED_TASK(userhook_FastLoop,    100,     75),
 #endif
-#ifdef USERHOOK_50HZLOOP
-    SCHED_TASK(userhook_50Hz,         50,     75),
+#ifdef USER_VPBATT_LOOP
+    SCHED_TASK(user_vpbatt_monitor,         50,     75),
 #endif
-#ifdef USERHOOK_MEDIUMLOOP
-    SCHED_TASK(userhook_MediumLoop,   10,     75),
+#ifdef USER_TEMPERATURE_LOOP
+    SCHED_TASK(user_temperature_logger,   10,     75),
 #endif
-#ifdef USERHOOK_SLOWLOOP
-    SCHED_TASK(userhook_SlowLoop,     3.3,    75),
+#ifdef USER_HUMIDITY_LOOP
+    SCHED_TASK(user_humidity_logger,     3.3,    75),
 #endif
-#ifdef USERHOOK_SUPERSLOWLOOP
-    SCHED_TASK(userhook_SuperSlowLoop, 1,   75),
+#ifdef USER_WVANE_LOOP
+    SCHED_TASK(user_wvane_logger, 1,   75),
 #endif
 };
 

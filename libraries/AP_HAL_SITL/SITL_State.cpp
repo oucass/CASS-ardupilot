@@ -373,11 +373,22 @@ void SITL_State::_simulator_servos(SITL::Aircraft::sitl_input &input)
         // The EKF does not like step inputs so this LPF keeps it happy.
         wind_speed =     _sitl->wind_speed_active     = (0.95f*_sitl->wind_speed_active)     + (0.05f*_sitl->wind_speed);
 
+        // CASS simple wind model implementation for simulations
         if(is_zero(_sitl->wind_direction)){
             if(altitude<1030){
-                wind_direction  = -(2.82e-11f)*powf(altitude,5) + (6.71451e-8f)*powf(altitude,4) - (5.62104222e-5f)*powf(altitude,3) + (2.00937168714e-2f)*powf(altitude,2) - 2.9089387983472f*altitude + 235.34632f;
+                wind_direction = -(2.82e-11f)*powf(altitude,5) + (6.71451e-8f)*powf(altitude,4) - (5.62104222e-5f)*powf(altitude,3) + (2.00937168714e-2f)*powf(altitude,2) - 2.9089387983472f*altitude + 235.34632f;
                 wind_direction = fmodf(wind_direction,360.0f);
-                wind_direction = _sitl->wind_direction_active = (0.95f*_sitl->wind_direction_active) + (0.05f*wind_direction);
+                //wind_direction = _sitl->wind_direction_active = (0.95f*_sitl->wind_direction_active) + (0.05f*wind_direction);
+            }
+            else{
+                wind_direction = _sitl->wind_direction_active = (0.95f*_sitl->wind_direction_active) + (0.05f*_sitl->wind_direction);
+            }
+        }
+        else if (_sitl->wind_direction == 359){
+            if(altitude<1030){
+                wind_direction = 45*sinf(1.88e-4f*altitude*altitude) + 60;
+                wind_direction = fmodf(wind_direction,360.0f);
+                //wind_direction = _sitl->wind_direction_active = (0.95f*_sitl->wind_direction_active) + (0.05f*wind_direction);
             }
             else{
                 wind_direction = _sitl->wind_direction_active = (0.95f*_sitl->wind_direction_active) + (0.05f*_sitl->wind_direction);

@@ -29,17 +29,7 @@ float Copter::Mode::AutoYaw::look_ahead_yaw()
 // It will only track the wind if its horizontally stationary 
 float Copter::Mode::AutoYaw::turn_into_wind()
 {
-    Vector3f vel_xyz = copter.inertial_nav.get_velocity();
-    float speed = norm(vel_xyz.x,vel_xyz.y); // cm/s
-    float dist_to_wp = copter.wp_nav->get_wp_distance_to_destination(); // cm (horizontally)
-    if(copter.position_ok()){
-        if(speed < 110.0f && dist_to_wp < 300){
-            _wind_yaw = copter.cass_wind_direction;
-        } else {
-            _wind_yaw = copter.wp_nav->get_yaw();
-        }
-    }
-    return _wind_yaw;
+    return copter.cass_wind_direction;
 }
 
 float Copter::Mode::AutoYaw::turn_into_wind_CT2()

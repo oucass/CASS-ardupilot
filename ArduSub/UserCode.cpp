@@ -15,29 +15,29 @@ void Sub::userhook_FastLoop()
 }
 #endif
 
-#ifdef USERHOOK_50HZLOOP
-void Sub::userhook_50Hz()
+#ifdef USER_VPBATT_LOOP
+void Sub::user_vpbatt_monitor()
 {
     // put your 50Hz code here
 }
 #endif
 
-#ifdef USERHOOK_MEDIUMLOOP
-void Sub::userhook_MediumLoop()
+#ifdef USER_TEMPERATURE_LOOP
+void Sub::user_temperature_logger()
 {
     // put your 10Hz code here
 }
 #endif
 
-#ifdef USERHOOK_SLOWLOOP
-void Sub::userhook_SlowLoop()
+#ifdef USER_HUMIDITY_LOOP
+void Sub::user_humidity_logger()
 {
     // put your 3.3Hz code here
 }
 #endif
 
-#ifdef USERHOOK_SUPERSLOWLOOP
-void Sub::userhook_SuperSlowLoop()
+#ifdef USER_WVANE_LOOP
+void Sub::user_wvane_logger()
 {
     // put your 1Hz code here
 }
