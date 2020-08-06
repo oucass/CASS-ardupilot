@@ -148,10 +148,18 @@ public:
         //
         // 75: Singlecopter, CoaxCopter
         //
-        k_param_single_servo_1 = 75,    // remove
-        k_param_single_servo_2,         // remove
-        k_param_single_servo_3,         // remove
-        k_param_single_servo_4,         // 78 - remove
+        // k_param_single_servo_1 = 75,    // remove
+        // k_param_single_servo_2,         // remove
+        // k_param_single_servo_3,         // remove
+        // k_param_single_servo_4,         // 78 - remove
+
+        // CASS AutoVP mission generation
+        k_param_autovp_max_altitude = 75,
+
+        // CASS smart Battery monitor parameters
+        k_param_vpbatt_enabled,
+        k_param_vpbatt_reserve,
+        k_param_vpbatt_wh,
 
         //
         // 80: Heli
@@ -459,7 +467,15 @@ public:
     AP_Float    wind_vane_wsB;
     AP_Float    wind_vane_spd_tol;
     AP_Float    wind_vane_enabled; 
-    AP_Float     wind_vane_fs;
+    AP_Float    wind_vane_fs;
+
+    //CASS Vertical profiling smart Battery monitor params
+    AP_Float    vpbatt_enabled;
+    AP_Float    vpbatt_reserve;
+    AP_Float    vpbatt_wh;
+
+    //CASS AutoVP mission auto-generation
+    AP_Float    autovp_max_altitude;
 
     // Misc
     //

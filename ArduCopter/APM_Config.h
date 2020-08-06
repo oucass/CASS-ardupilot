@@ -106,8 +106,8 @@
 // Put your custom code into the UserCode.cpp with function names matching those listed below and ensure the appropriate #define below is uncommented below
 #define USERHOOK_INIT userhook_init();                      // for code to be run once at startup
 //#define USERHOOK_FASTLOOP userhook_FastLoop();            // for code to be run at 100hz
-//#define USER_VPBATT_LOOP user_vpbatt_monitor();                  // for code to be run at 50hz
+#define USER_VPBATT_LOOP user_vpbatt_monitor();                  // for code to be run at 50hz
 #define USER_TEMPERATURE_LOOP user_temperature_logger();        // for code to be run at 10hz
 #define USER_HUMIDITY_LOOP user_humidity_logger();            // for code to be run at 3.3hz
 #define USER_WVANE_LOOP user_wvane_logger();  // for code to be run at 1hz
-//#define USERHOOK_AUXSWITCH ENABLED                        // for code to handle user aux switches
+#define USERHOOK_AUXSWITCH ENABLED                        // for code to handle user aux switches

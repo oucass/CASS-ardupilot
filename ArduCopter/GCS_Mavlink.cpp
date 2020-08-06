@@ -234,15 +234,16 @@ void Copter::send_cass_imet(mavlink_channel_t chan) {
     if(!HAVE_PAYLOAD_SPACE(chan, CASS_SENSOR_RAW)){
         return;
     }
-    for(uint8_t i=0; i<4; i++){
-        raw_sensor[i] = copter.CASS_Imet[i].resistance();
-    }
     #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    // Variables simulation for IMET resistance measurements
+        // Variables simulation for IMET resistance measurements
         for(uint8_t i=0; i<4; i++){
             raw_sensor[i] = -356.9892f*raw_sensor[i] + 110935.3763f;
         }
         //printf("HYT271 temp: %5.2f \n",raw_sensor[0]);  
+    #else
+        for(uint8_t i=0; i<4; i++){
+            raw_sensor[i] = copter.CASS_Imet[i].resistance();
+        }
     #endif
     // Call Mavlink function and send CASS data
     mavlink_msg_cass_sensor_raw_send(

@@ -44,7 +44,7 @@ bool AC_CASS_Imet::init(uint8_t busId, uint8_t i2cAddr)
              ADS1115_REG_CONFIG_CLAT_NONLAT  | // Non-latching (default val)
              ADS1115_REG_CONFIG_CPOL_ACTVLOW | // Alert/Rdy active low   (default val)
              ADS1115_REG_CONFIG_CMODE_TRAD   | // Traditional comparator (default val)
-             ADS1115_REG_CONFIG_DR_32SPS     | // 32 samples (conversions) per second
+             ADS1115_REG_CONFIG_DR_16SPS     | // 16 samples (conversions) per second
              ADS1115_REG_CONFIG_MODE_SINGLE  | // Single-shot mode (default)
              ADS1115_REG_CONFIG_PGA_6_144V   | // Set PGA/voltage range
              ADS1115_REG_CONFIG_OS_SINGLE;     // Start single-conversion
@@ -80,7 +80,7 @@ bool AC_CASS_Imet::init(uint8_t busId, uint8_t i2cAddr)
     _dev->get_semaphore()->give();
 
     // Register sensor to the I2C manager
-    _dev->register_periodic_callback(50000,
+    _dev->register_periodic_callback(100000,
                                      FUNCTOR_BIND_MEMBER(&AC_CASS_Imet::_timer, void));
     return true;
 }

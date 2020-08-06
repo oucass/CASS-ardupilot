@@ -434,7 +434,7 @@ const AP_Param::Info Copter::var_info[] = {
     // @Description: Enable (1) or disable (0) wind vane mode auto RTL switch
     // @Range: 0 to 1
     // @User: Advanced
-    GSCALAR(wind_vane_enabled,    "WVANE_RTL_ON",          1.0f),
+    GSCALAR(wind_vane_enabled,    "WVANE_RTL_EN",          1.0f),
 
     // @Param: USER_SENSORS
     // @DisplayName: Wind vane sampling frequency
@@ -442,6 +442,34 @@ const AP_Param::Info Copter::var_info[] = {
     // @Range: 1 to 10
     // @User: Advanced
     GSCALAR(wind_vane_fs,    "WVANE_FS",          10.0f),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: Wind vane sampling frequency
+    // @Description: Sampling and operating frequency of the wind vane algorithm
+    // @Range: 1 to 10
+    // @User: Advanced
+    GSCALAR(vpbatt_enabled,    "VPBATT_EN",          1.0f),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: Wind vane sampling frequency
+    // @Description: Sampling and operating frequency of the wind vane algorithm
+    // @Range: 1 to 10
+    // @User: Advanced
+    GSCALAR(vpbatt_reserve,    "VPBATT_RES",          30.0f),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: Wind vane sampling frequency
+    // @Description: Sampling and operating frequency of the wind vane algorithm
+    // @Range: 1 to 10
+    // @User: Advanced
+    GSCALAR(vpbatt_wh,    "VPBATT_WH",          89.2f),
+
+    // @Param: USER_SENSORS
+    // @DisplayName: Wind vane sampling frequency
+    // @Description: Sampling and operating frequency of the wind vane algorithm
+    // @Range: 1 to 10
+    // @User: Advanced
+    GSCALAR(autovp_max_altitude,    "AUTOVP_ALT",          120.0f),
 
     ////////////////////////////CASS////////////////////////////////////
 

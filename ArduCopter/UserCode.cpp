@@ -20,7 +20,11 @@ float _wind_speed, _wind_dir;
 float R13, R23, R33;
 float last_yrate;
 bool high_wind_flag;
-uint32_t last_now;
+uint32_t wvane_now;
+//Declare digital LPF
+LPFrdFloat filt_thrvec_x;
+LPFrdFloat filt_thrvec_y;
+LPFrdFloat filt_thrvec_z;
 //g.wind_vane_wsA -> Coefficient A of the linear wind speed equation, from calibration
 //g.wind_vane_wsB -> Coefficient B of the linear wind speed equation, from calibration
 //g.wind_vane_min_roll -> Minimum roll angle that the wind vane will correct (too low and the copter will oscilate)
@@ -28,10 +32,16 @@ uint32_t last_now;
 //g.wind_vane_fine_gain -> Wind vane gain: higher values will increase the resposivness
 //g.wind_vane_fs -> Wind vane sampling frequency, range 1 to 10Hz.
 
-//Declare digital LPF
-LPFrdFloat filt_thrvec_x;
-LPFrdFloat filt_thrvec_y;
-LPFrdFloat filt_thrvec_z;
+//Smart Vertical Profiling Battery monitor parameters
+float Whc; // Energy consumed
+float Whn; // Energy needed to fly home safely
+float int_wvspd; // Wind speed history or memory while ascending
+uint32_t vpbatt_now;
+bool batt_home_ok;
+bool batt_warning_flag;
+
+//AutoVP mission generation
+uint32_t mission_now;
 
 #ifdef USERHOOK_INIT
 void Copter::userhook_init()
@@ -44,7 +54,10 @@ void Copter::userhook_init()
     R13 = 0.0f; R23 = 0.0f;
     last_yrate = 0;
     high_wind_flag = false;
-    last_now = AP_HAL::millis();
+    wvane_now = AP_HAL::millis();
+
+    //AutoVP initialize
+    mission_now = AP_HAL::millis();
 
     //Wind filter initialization
     float Fss;
@@ -67,6 +80,12 @@ void Copter::userhook_init()
         filt_thrvec_z.set_cutoff_frequency(Fss,g.wind_vane_cutoff);
     }
 
+    //VPBatt_monitor initilize
+    Whc = Whn = int_wvspd = 0;
+    batt_home_ok = true;
+    batt_warning_flag = false;
+    vpbatt_now = AP_HAL::millis();
+
     // Initialize Fan Control
     SRV_Channels::set_output_scaled(SRV_Channel::k_egg_drop, fan_pwm_off);
     _fan_status = false;
@@ -83,7 +102,75 @@ void Copter::userhook_FastLoop()
 #ifdef USER_VPBATT_LOOP
 void Copter::user_vpbatt_monitor()
 {
-    // put your 50Hz code here
+    // Smart Battery Management - Use it only for Vertical profiling
+    float alt;
+    float dt = (float)(AP_HAL::millis() - vpbatt_now);
+    // Compute loop only when flying
+    if(!ap.land_complete){
+        // Enter loop every 100 milliseconds
+        if(dt >= 100.0f){
+            // Calculate energy consumed in Watt-hour
+            Whc = Whc + battery.voltage()*battery.current_amps()*dt/3.6e6f;
+
+            //Compute the temporal integration of the wind speed (works as a memory)
+            Vector3f velocity;
+            copter.ahrs.get_velocity_NED(velocity);
+            if(velocity[2] < 0){
+                int_wvspd = int_wvspd + _wind_speed*dt/1000;
+            }
+
+            // Calculate the Descent-Energy-consumption per meter height (function of wind speed)
+            float Whm = 1.5e-6f*int_wvspd + 7e-3;
+            // Constrain lower values
+            Whm = Whm > 0.01 ? Whm : 0.01;
+            
+            // Get current altitude in meters
+            copter.ahrs.get_relative_position_D_home(alt);
+            alt = -1.0f*alt;
+            // Calculate energy needed to get home safely
+            Whn = Whm*alt;
+            
+            // Estimate the total energy used (percentage)
+            // vpbatt_reserve is the desired batt percentage after landing
+            float Wh_tot = (Whc + Whn)/g.vpbatt_wh + g.vpbatt_reserve/100.0f + 0.05f;
+
+            //Switch to RTL automatically if battery reaches critical remaining energy
+            if(!is_zero(g.vpbatt_wh)){
+                // Issue a warning once when the battery altitude range is over 85%
+                if(Wh_tot >= 0.85f && batt_warning_flag == false){
+                    // It will still warn, even if the function is disabled
+                    if(!is_zero(g.vpbatt_enabled)){
+                        gcs().send_text(MAV_SEVERITY_WARNING, "Over 85 Batt range");
+                    }
+                    batt_warning_flag = true;
+                }
+
+                // Trigger RTL when max battery altitude range is reached
+                if(Wh_tot >= 1.0f && batt_home_ok == true){
+                    gcs().send_text(MAV_SEVERITY_WARNING, "Max Batt range: Switch to RTL");
+                    // It will still warn, even if the function is disabled
+                    if(!is_zero(g.vpbatt_enabled)){
+                        copter.set_mode(RTL, MODE_REASON_UNKNOWN);
+                    }
+                    batt_home_ok = false;
+                }
+            }
+            // Update time
+            vpbatt_now = AP_HAL::millis();
+
+            //Print on terminal for debugging
+            printf("Whc: %5.2f \n",Whc);
+            printf("Vel_Z: %5.2f \n",velocity[2]);
+            printf("int_wvspd: %5.4f \n",int_wvspd);
+            printf("Whm: %5.4f \n",Whm);
+            printf("Whn: %5.2f \n",Whn);
+            printf("Wh_tot: %5.2f \n",Wh_tot);
+        }
+    }
+    else{
+        vpbatt_now = AP_HAL::millis();
+        int_wvspd = 0.0f;
+    }
 }
 #endif
 
@@ -239,7 +326,7 @@ void Copter::user_wvane_logger()
         R33 = -1*copter.ahrs.get_rotation_body_to_ned().c.z;
 
         //Wind vane loop starts here. Loop frequency is defined by WVANE_FS param in Hz
-        if((AP_HAL::millis() - last_now) >= (uint32_t)(1000/g.wind_vane_fs)){
+        if((AP_HAL::millis() - wvane_now) >= (uint32_t)(1000/g.wind_vane_fs)){
             //Apply Butterworth LPF on each element
             float thrvec_x, thrvec_y, thrvec_z;
             thrvec_x = filt_thrvec_x.apply(R13);
@@ -278,15 +365,16 @@ void Copter::user_wvane_logger()
             _wind_speed = _wind_speed < 0 ? 0.0f : _wind_speed;
 
             //Get current velocity
-            Vector3f vel_xyz = copter.inertial_nav.get_velocity();
+            Vector3f vel_xyz = copter.inertial_nav.get_velocity(); // NEU convention
             float tyaw = copter.wp_nav->get_yaw()*DEG_TO_RAD/100.0f;
             float speed_y = vel_xyz.y*cosf(tyaw) - vel_xyz.x*sinf(tyaw);
             float speed = norm(vel_xyz.x,vel_xyz.y); 
             
             //Wind vane is active when flying horizontally steady and wind speed is perceivable
-            if(fabsf(speed_y) < 100.0f && _wind_speed > 1.0f){
+            //Condition when ascending
+            if(fabsf(speed_y) < 100.0f && _wind_speed > 1.0f && vel_xyz[2] >= 0.0f){
                 //Min altitude and speed at which the yaw command is sent
-                if(alt>400.0f && speed<(fabsf(speed_y)+100.0f)){ 
+                if(alt>500.0f && speed<(fabsf(speed_y)+100.0f)){ 
                     //Send estimated wind direction to the autopilot
                     copter.cass_wind_direction = _wind_dir;
                     copter.cass_wind_speed = _wind_speed;
@@ -294,6 +382,18 @@ void Copter::user_wvane_logger()
                 else{
                     //Send neutral values
                     copter.cass_wind_direction = copter.wp_nav->get_yaw();
+                    copter.cass_wind_speed = 0.0f;
+                }
+            }
+            //Condition when descending
+            else if (fabsf(speed_y) < 100.0f && _wind_speed > 3.0f && vel_xyz[2] < 0.0f){
+                if(alt>1000.0f && speed<(fabsf(speed_y)+100.0f)){ 
+                    //Send estimated wind direction to the autopilot
+                    copter.cass_wind_direction = _wind_dir;
+                    copter.cass_wind_speed = _wind_speed;
+                }
+                else{
+                    //Do nothing - keep yaw equal to last wind direction estimate
                     copter.cass_wind_speed = 0.0f;
                 }
             }
@@ -319,7 +419,7 @@ void Copter::user_wvane_logger()
             }
 
             //Update last loop time
-            last_now = AP_HAL::millis();
+            wvane_now = AP_HAL::millis();
         }
         
     }
@@ -355,6 +455,102 @@ void Copter::user_wvane_logger()
 void Copter::userhook_auxSwitch1(uint8_t ch_flag)
 {
     // put your aux switch #1 handler here (CHx_OPT = 47)
+
+    AP_Mission::Mission_Command cmd;
+    int32_t vp_lat = copter.current_loc.lat; // ahrs.get_home().lat;
+    int32_t vp_lng = copter.current_loc.lng; // ahrs.get_home().lng;
+    float max_alt = g.autovp_max_altitude*100; //convert to cm
+    char autovp_message[22];
+
+    // Run code when switch is toggled HIGH (pwm > 1800)
+    if(ch_flag==AUX_SWITCH_HIGH){
+        // Check if drone is grounded and ready to create a mission
+        if(ap.land_complete && copter.position_ok() && (AP_HAL::millis() - mission_now) > 5000){
+
+            // clear mission
+            mission.clear();
+
+            // Command #0 : home
+            cmd.id = MAV_CMD_NAV_WAYPOINT;
+            cmd.content.location.options = 0;
+            cmd.p1 = 0;
+            cmd.content.location.flags.relative_alt = 1;
+            cmd.content.location.alt = 0;
+            cmd.content.location.lat = vp_lat;
+            cmd.content.location.lng = vp_lng;
+            if (!mission.add_cmd(cmd)) {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
+            }
+
+            // Command #1 : take-off to 5m
+            cmd.id = MAV_CMD_NAV_TAKEOFF;
+            cmd.content.location.options = 0;
+            cmd.p1 = 0;
+            cmd.content.location.flags.relative_alt = 1;
+            cmd.content.location.alt = 500; //in cm
+            cmd.content.location.lat = 0;
+            cmd.content.location.lng = 0;
+            if (!mission.add_cmd(cmd)) {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
+            }
+
+            // Command #2 : Bottom waypoint at 10m
+            cmd.id = MAV_CMD_NAV_WAYPOINT;
+            cmd.content.location.options = 0;
+            cmd.p1 = 0;
+            cmd.content.location.flags.relative_alt = 1;
+            cmd.content.location.alt = 1000;
+            cmd.content.location.lat = vp_lat;
+            cmd.content.location.lng = vp_lng;
+            if (!mission.add_cmd(cmd)) {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
+            }
+
+            // Constrain target altitude
+            if(max_alt > 180000){
+                max_alt = 180000;
+                gcs().send_text(MAV_SEVERITY_INFO, "AutoVP: Max Alt set to 1800m");
+            }
+            if(max_alt < 1000){
+                max_alt = 1000;
+                gcs().send_text(MAV_SEVERITY_INFO, "AutoVP: Max Alt set to 10m");
+            }
+
+            // Command #3 : Top waypoint at desired altitude (from parameter)
+            cmd.id = MAV_CMD_NAV_WAYPOINT;
+            cmd.content.location.options = 0;
+            cmd.p1 = 0;
+            cmd.content.location.flags.relative_alt = 1;
+            cmd.content.location.alt = (int32_t)max_alt;
+            cmd.content.location.lat = vp_lat;
+            cmd.content.location.lng = vp_lng;
+            if (!mission.add_cmd(cmd)) {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
+            }
+
+            // Command #4 : RTL
+            cmd.id = MAV_CMD_NAV_RETURN_TO_LAUNCH;
+            cmd.p1 = 0;
+            cmd.content.location.flags.relative_alt = 1;
+            cmd.content.location.lat = 0;
+            cmd.content.location.lng = 0;
+            cmd.content.location.alt = 0;
+            if (!mission.add_cmd(cmd)) {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
+            }
+
+            // Send successful creation message
+            gcs().send_text(MAV_SEVERITY_INFO, "AutoVP mission received");
+            snprintf(autovp_message, 22, "Target alt: %.1f m",max_alt/100);
+            gcs().send_text(MAV_SEVERITY_INFO, autovp_message);
+
+            mission_now = AP_HAL::millis();
+        }
+        else{
+            // Send unable to create mission message warning
+            gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: Unable to create mission");
+        }
+    }
 }
 
 void Copter::userhook_auxSwitch2(uint8_t ch_flag)
