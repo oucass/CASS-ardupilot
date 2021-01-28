@@ -107,7 +107,7 @@ const AP_Scheduler::Task Copter::scheduler_tasks[] = {
     SCHED_TASK(read_rangefinder,      20,    100),
 #endif
 #if PROXIMITY_ENABLED == ENABLED
-    SCHED_TASK_CLASS(AP_Proximity,         &copter.g2.proximity,        update,         100,  50),
+    SCHED_TASK_CLASS(AP_Proximity,         &copter.g2.proximity,        update,         200,  50),
 #endif
 #if BEACON_ENABLED == ENABLED
     SCHED_TASK_CLASS(AP_Beacon,            &copter.g2.beacon,           update,         400,  50),
@@ -186,17 +186,17 @@ const AP_Scheduler::Task Copter::scheduler_tasks[] = {
 #ifdef USERHOOK_FASTLOOP
     SCHED_TASK(userhook_FastLoop,    100,     75),
 #endif
-#ifdef USERHOOK_50HZLOOP
-    SCHED_TASK(userhook_50Hz,         50,     75),
+#ifdef USER_VPBATT_MNTR_LOOP
+    SCHED_TASK(user_vpbatt_monitor,         50,     75),
 #endif
-#ifdef USERHOOK_MEDIUMLOOP
-    SCHED_TASK(userhook_MediumLoop,   20,     75),
+#ifdef USER_TEMPERATURE_LOOP
+    SCHED_TASK(user_temperature_logger,   20,     75),
 #endif
-#ifdef USERHOOK_SLOWLOOP
-    SCHED_TASK(userhook_SlowLoop,     20,    75),
+#ifdef USER_HUMIDITY_LOOP
+    SCHED_TASK(user_humidity_logger,     10,    75),
 #endif
-#ifdef USERHOOK_SUPERSLOWLOOP
-    SCHED_TASK(userhook_SuperSlowLoop, 10,   75),
+#ifdef USER_WIND_LOOP
+    SCHED_TASK(user_wind_vane, 20,   75),
 #endif
 #if BUTTON_ENABLED == ENABLED
     SCHED_TASK_CLASS(AP_Button,            &copter.g2.button,           update,           5, 100),
@@ -250,6 +250,9 @@ void Copter::fast_loop()
 
 #if FRAME_CONFIG == HELI_FRAME
     update_heli_control_dynamics();
+    #if MODE_AUTOROTATE_ENABLED == ENABLED
+        heli_update_autorotation();
+    #endif
 #endif //HELI_FRAME
 
     // Inertial Nav
@@ -294,7 +297,7 @@ void Copter::rc_loop()
 void Copter::throttle_loop()
 {
     // update throttle_low_comp value (controls priority of throttle vs attitude control)
-    update_throttle_thr_mix();
+    update_throttle_mix();
 
     // check auto_armed status
     update_auto_armed();
@@ -402,6 +405,13 @@ void Copter::twentyfive_hz_logging()
 #if PRECISION_LANDING == ENABLED
     // log output
     Log_Write_Precland();
+#endif
+
+#if MODE_AUTOROTATE_ENABLED == ENABLED
+    if (should_log(MASK_LOG_ATTITUDE_MED) || should_log(MASK_LOG_ATTITUDE_FAST)) {
+        //update autorotation log
+        g2.arot.Log_Write_Autorotation();
+    }
 #endif
 }
 

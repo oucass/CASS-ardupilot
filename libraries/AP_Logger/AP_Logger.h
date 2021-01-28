@@ -255,6 +255,8 @@ public:
     void Write_Camera(const Location &current_loc, uint64_t timestamp_us=0);
     void Write_Trigger(const Location &current_loc);
     void Write_ESC(uint8_t id, uint64_t time_us, int32_t rpm, uint16_t voltage, uint16_t current, int16_t temperature, uint16_t current_tot);
+    void Write_ServoStatus(uint64_t time_us, uint8_t id, float position, float force, float speed, uint8_t power_pct);
+    void Write_ESCStatus(uint64_t time_us, uint8_t id, uint32_t error_count, float voltage, float current, float temperature, int32_t rpm, uint8_t power_pct);
     void Write_Attitude(const Vector3f &targets);
     void Write_AttitudeView(AP_AHRS_View &ahrs, const Vector3f &targets);
     void Write_Current();
@@ -411,6 +413,7 @@ private:
         const char *units;
         const char *mults;
     } *log_write_fmts;
+    HAL_Semaphore_Recursive log_write_fmts_sem;
 
     // return (possibly allocating) a log_write_fmt for a name
     struct log_write_fmt *msg_fmt_for_name(const char *name, const char *labels, const char *units, const char *mults, const char *fmt);

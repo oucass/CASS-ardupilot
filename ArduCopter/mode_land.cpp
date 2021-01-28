@@ -35,7 +35,18 @@ bool ModeLand::init(bool ignore_checks)
     copter.ap.land_repo_active = false;
 
     // initialise yaw
-    auto_yaw.set_mode(AUTO_YAW_HOLD);
+    // CASS modification. Keep wind estiator active while landing
+    if(auto_yaw.default_mode(true) == AUTO_YAW_INTO_WIND){
+        auto_yaw.set_mode(AUTO_YAW_INTO_WIND);}
+    else if(auto_yaw.default_mode(true) == AUTO_YAW_WIND_CT2){
+        auto_yaw.set_mode(AUTO_YAW_WIND_CT2);
+    }
+    else{
+        auto_yaw.set_mode(AUTO_YAW_HOLD);
+    }
+
+    // optionally deploy landing gear
+    copter.landinggear.deploy_for_landing();
 
     return true;
 }

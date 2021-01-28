@@ -15,6 +15,7 @@
 #include <AP_Common/Bitmask.h>
 #include <AP_Devo_Telem/AP_Devo_Telem.h>
 #include <RC_Channel/RC_Channel.h>
+#include <AP_Filesystem/AP_Filesystem_Available.h>
 
 #include "MissionItemProtocol_Waypoints.h"
 #include "MissionItemProtocol_Rally.h"
@@ -23,6 +24,7 @@
 
 #define GCS_DEBUG_SEND_MESSAGE_TIMINGS 0
 
+#ifndef HAL_NO_GCS
 // check if a message will fit in the payload space available
 #define PAYLOAD_SIZE(chan, id) (GCS_MAVLINK::packet_overhead_chan(chan)+MAVLINK_MSG_ID_ ## id ## _LEN)
 #define HAVE_PAYLOAD_SPACE(chan, id) (comm_get_txspace(chan) >= PAYLOAD_SIZE(chan, id))
@@ -240,8 +242,8 @@ public:
       send a MAVLink message to all components with this vehicle's system id
       This is a no-op if no routes to components have been learned
     */
-    static void send_to_components(const mavlink_message_t &msg) { routing.send_to_components(msg); }
-    
+    static void send_to_components(uint32_t msgid, const char *pkt, uint8_t pkt_len) { routing.send_to_components(msgid, pkt, pkt_len); }
+
     /*
       allow forwarding of packets / heartbeats to be blocked as required by some components to reduce traffic
     */
@@ -288,7 +290,8 @@ protected:
     void set_ekf_origin(const Location& loc);
 
     virtual MAV_MODE base_mode() const = 0;
-    virtual MAV_STATE system_status() const = 0;
+    MAV_STATE system_status() const;
+    virtual MAV_STATE vehicle_system_status() const = 0;
 
     virtual MAV_VTOL_STATE vtol_state() const { return MAV_VTOL_STATE_UNDEFINED; }
     virtual MAV_LANDED_STATE landed_state() const { return MAV_LANDED_STATE_UNDEFINED; }
@@ -414,6 +417,8 @@ protected:
     MAV_RESULT handle_command_do_fence_enable(const mavlink_command_long_t &packet);
 
     void handle_optical_flow(const mavlink_message_t &msg);
+
+    MAV_RESULT handle_fixed_mag_cal_yaw(const mavlink_command_long_t &packet);
 
     // vehicle-overridable message send function
     virtual bool try_send_message(enum ap_message id);
@@ -611,6 +616,84 @@ private:
     void param_io_timer(void);
 
     uint8_t send_parameter_async_replies();
+
+#if HAVE_FILESYSTEM_SUPPORT
+
+    enum class FTP_OP : uint8_t {
+        None = 0,
+        TerminateSession = 1,
+        ResetSessions = 2,
+        ListDirectory = 3,
+        OpenFileRO = 4,
+        ReadFile = 5,
+        CreateFile = 6,
+        WriteFile = 7,
+        RemoveFile = 8,
+        CreateDirectory = 9,
+        RemoveDirectory = 10,
+        OpenFileWO = 11,
+        TruncateFile = 12,
+        Rename = 13,
+        CalcFileCRC32 = 14,
+        BurstReadFile = 15,
+        Ack = 128,
+        Nack = 129,
+    };
+
+    enum class FTP_ERROR : uint8_t {
+        None = 0,
+        Fail = 1,
+        FailErrno = 2,
+        InvalidDataSize = 3,
+        InvalidSession = 4,
+        NoSessionsAvailable = 5,
+        EndOfFile = 6,
+        UnknownCommand = 7,
+        FileExists = 8,
+        FileProtected = 9,
+        FileNotFound = 10,
+    };
+
+    struct pending_ftp {
+        uint32_t offset;
+        mavlink_channel_t chan;        
+        uint16_t seq_number;
+        FTP_OP opcode;
+        FTP_OP req_opcode;
+        bool  burst_complete;
+        uint8_t size;
+        uint8_t session;
+        uint8_t sysid;
+        uint8_t compid;
+        uint8_t data[239];
+    };
+
+    enum class FTP_FILE_MODE {
+        Read,
+        Write,
+    };
+
+    struct ftp_state {
+        ObjectBuffer<pending_ftp> *requests;
+        ObjectBuffer<pending_ftp> *replies;
+
+        // session specific info, currently only support a single session over all links
+        int fd = -1;
+        FTP_FILE_MODE mode; // work around AP_Filesystem not supporting file modes
+        int16_t current_session;
+    };
+    static struct ftp_state ftp;
+
+    static void ftp_error(struct pending_ftp &response, FTP_ERROR error); // FTP helper method for packing a NAK
+    static int gen_dir_entry(char *dest, size_t space, const char * path, const struct dirent * entry); // FTP helper for emitting a dir response
+    static void ftp_list_dir(struct pending_ftp &request, struct pending_ftp &response);
+
+    bool ftp_init(void);
+    void handle_file_transfer_protocol(const mavlink_message_t &msg);
+    void send_ftp_replies(void);
+    void ftp_worker(void);
+    void ftp_push_replies(pending_ftp &reply);
+#endif // HAVE_FILESYSTEM_SUPPORT
 
     void send_distance_sensor(const class AP_RangeFinder_Backend *sensor, const uint8_t instance) const;
 
@@ -850,6 +933,22 @@ private:
 
     // timer called to implement pass-thru
     void passthru_timer();
+
+    // this contains the index of the GCS_MAVLINK backend we will
+    // first call update_send on.  It is incremented each time
+    // GCS::update_send is called so we don't starve later links of
+    // time in which they are permitted to send messages.
+    uint8_t first_backend_to_send;
 };
 
 GCS &gcs();
+
+// send text when we do have a GCS
+#define GCS_SEND_TEXT(severity, format, args...) gcs().send_text(severity, format, ##args)
+
+#else // HAL_NO_GCS
+// empty send text when we have no GCS
+#define GCS_SEND_TEXT(severity, format, args...)
+
+#endif // HAL_NO_GCS
+

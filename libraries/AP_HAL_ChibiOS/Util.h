@@ -38,16 +38,13 @@ public:
     // heap functions, note that a heap once alloc'd cannot be dealloc'd
     virtual void *allocate_heap_memory(size_t size) override;
     virtual void *heap_realloc(void *heap, void *ptr, size_t new_size) override;
+    virtual void *std_realloc(void *ptr, size_t new_size) override;
 #endif // ENABLE_HEAP
 
     /*
       return state of safety switch, if applicable
      */
     enum safety_state safety_switch_state(void) override;
-
-    // IMU temperature control
-    void set_imu_temp(float current) override;
-    void set_imu_target_temp(int8_t *target) override;
 
     // get system ID as a string
     bool get_system_id(char buf[40]) override;
@@ -77,17 +74,6 @@ private:
     };
 
     static ToneAlarmPwmGroup _toneAlarm_pwm_group;
-#endif
-
-#if HAL_HAVE_IMU_HEATER
-    struct {
-        int8_t *target;
-        float integrator;
-        uint16_t count;
-        float sum;
-        uint32_t last_update_ms;
-        float output;
-    } heater;
 #endif
 
     /*

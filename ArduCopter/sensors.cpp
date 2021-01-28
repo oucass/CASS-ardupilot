@@ -2,113 +2,33 @@
 
 void Copter::init_CASS_imet(){
 
-    float coeff[4][3];
+    float coeff[4][4];
 
-    // //CS2 BILLSONDE SENSORS
-    // //IMET temp number 56236:
-    // coeff[0][0] = 1.00993256e-03f;
-    // coeff[0][1] = 2.62155349e-04f;
-    // coeff[0][2] = 1.48648209e-07f;
+    //CS3D SENSORS (dummy values)
+    //IMET temp number 57560:
+    coeff[0][0] = 9.98873354e-04f;
+    coeff[0][1] = 2.63219974e-04f;
+    coeff[0][2] = 0.0f;
+    coeff[0][3] = 1.47120693e-07f;
 
-    // //IMET temp number 45364:
-    // coeff[1][0] = 1.01307391e-03f;
-    // coeff[1][1] = 2.61020114e-04f;
-    // coeff[1][2] = 1.52660155e-07f;
+    //IMET temp number 57551:
+    coeff[1][0] = 1.02017189e-03f;
+    coeff[1][1] = 2.60496203e-04f;
+    coeff[1][2] = 0.0f;
+    coeff[1][3] = 1.52569843e-07f;
 
-    // //IMET temp number 56220:
-    // coeff[2][0] = 1.01704202e-03f;
-    // coeff[2][1] = 2.61212821e-04f;
-    // coeff[2][2] = 1.51670179e-07f;
-
-    // //IMET temp number none:
-    // coeff[3][0] = 1.0;
-    // coeff[3][1] = 1.0;
-    // coeff[3][2] = 1.0;
-    
-    //CS2.5 TONYSONDE SENSORS
-    //IMET temp number 57562:
-    coeff[0][0] = 1.02777010e-03f;
-    coeff[0][1] = 2.59349232e-04f;
-    coeff[0][2] = 1.56043078e-07f;
-
-    //IMET temp number 57563:
-    coeff[1][0] = 9.91077399e-04f;
-    coeff[1][1] = 2.64646362e-04f;
-    coeff[1][2] = 1.43596294e-07f;
-
-    //IMET temp number 58821:
-    coeff[2][0] = 1.00786813e-03f;
-    coeff[2][1] = 2.61722397e-04f;
-    coeff[2][2] = 1.48476183e-07f;
+    //IMET temp number 57558:
+    coeff[2][0] = 1.01048989e-03f;
+    coeff[2][1] = 2.62050421e-04f;
+    coeff[2][2] = 0.0f;
+    coeff[2][3] = 1.48891207e-07f;
 
     //IMET temp number none:
-    coeff[3][0] = 1.0;
-    coeff[3][1] = 1.0;
-    coeff[3][2] = 1.0;
-
-    // //CS2.5 CHRISSONDE SENSORS
-    // //IMET temp number 57549:
-    // coeff[0][0] = 1.01991700e-03f;
-    // coeff[0][1] = 2.60780405e-04f;
-    // coeff[0][2] = 1.52712244e-07f;
-
-    // //IMET temp number 58814:
-    // coeff[1][0] = 1.01248342e-03f;
-    // coeff[1][1] = 2.61214144e-04f;
-    // coeff[1][2] = 1.50257257e-07f;
-
-    // //IMET temp number 58822:
-    // coeff[2][0] = 1.00761568e-03f;
-    // coeff[2][1] = 2.61899525e-04f;
-    // coeff[2][2] = 1.49075281e-07f;
-
-    // //IMET temp number none:
-    // coeff[3][0] = 1.0;
-    // coeff[3][1] = 1.0;
-    // coeff[3][2] = 1.0;
-
-    // //CS2.5 DEREKSONDE SENSORS
-    // //IMET temp number 57555:
-    // coeff[0][0] = 1.02009822e-03f;
-    // coeff[0][1] = 2.60475129e-04f;
-    // coeff[0][2] = 1.54057907e-07f;
-
-    // //IMET temp number 57564:
-    // coeff[1][0] = 1.01554852e-03f;
-    // coeff[1][1] = 2.61642038e-04f;
-    // coeff[1][2] = 1.50140249e-07f;
-
-    // //IMET temp number 57565:
-    // coeff[2][0] = 1.02812678e-03f;
-    // coeff[2][1] = 2.59630119e-04f;
-    // coeff[2][2] = 1.55078895e-07f;
-
-    // //IMET temp number none:
-    // coeff[3][0] = 1.0;
-    // coeff[3][1] = 1.0;
-    // coeff[3][2] = 1.0;
-
-    // //RED COPTERSONDE SENSORS
-    // //IMET temp number 48623:
-    // coeff[0][0] = 1.00733068f * (float)pow(10, -3);
-    // coeff[0][1] = 2.62299300f * (float)pow(10, -4);
-    // coeff[0][2] = 1.48361439f * (float)pow(10, -7);
-
-    // //IMET temp number 48627:
-    // coeff[1][0] = 1.00097308f * (float)pow(10, -3);
-    // coeff[1][1] = 2.62806129f * (float)pow(10, -4);
-    // coeff[1][2] = 1.46350112f * (float)pow(10, -7);
-
-    // //IMET temp number 45363:
-    // coeff[2][0] = 9.93118592f * (float)pow(10, -4);
-    // coeff[2][1] = 2.63743049f * (float)pow(10, -4);
-    // coeff[2][2] = 1.47415476f * (float)pow(10, -7);
-
-    // //IMET temp number 48622:
-    // coeff[3][0] = 1.00880279f * (float)pow(10, -3);
-    // coeff[3][1] = 2.61500024f * (float)pow(10, -4);
-    // coeff[3][2] = 1.49421629f * (float)pow(10, -7);
-
+    coeff[3][0] = 1.0f;
+    coeff[3][1] = 1.0f;
+    coeff[3][2] = 0.0f;
+    coeff[3][3] = 1.0f;
+    
     // Initialize and set I2C addresses
     uint8_t deafult_i2cAddr = 0x48;
     uint8_t busId = 0;
@@ -164,7 +84,7 @@ void Copter::read_rangefinder(void)
 #if RANGEFINDER_TILT_CORRECTION == ENABLED
     const float tilt_correction = MAX(0.707f, ahrs.get_rotation_body_to_ned().c.z);
 #else
-    const float tile_correction = 1.0f;
+    const float tilt_correction = 1.0f;
 #endif
 
     // iterate through downward and upward facing lidar
@@ -330,7 +250,6 @@ void Copter::init_proximity(void)
 {
 #if PROXIMITY_ENABLED == ENABLED
     g2.proximity.init();
-    g2.proximity.set_rangefinder(&rangefinder);
 #endif
 }
 

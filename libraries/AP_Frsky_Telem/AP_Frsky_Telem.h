@@ -42,6 +42,7 @@ for FrSky D protocol (D-receivers)
 #define DATA_ID_GPS_LONG_EW         0x22
 #define DATA_ID_GPS_LAT_NS          0x23
 #define DATA_ID_CURRENT             0x28
+#define DATA_ID_VARIO               0x30
 #define DATA_ID_VFAS                0x39
 
 #define START_STOP_D                0x5E
@@ -112,7 +113,9 @@ for FrSky SPort Passthrough
 
 class AP_Frsky_Telem {
 public:
-    AP_Frsky_Telem();
+    AP_Frsky_Telem(bool external_data=false);
+
+    ~AP_Frsky_Telem();
 
     /* Do not allow copies */
     AP_Frsky_Telem(const AP_Frsky_Telem &other) = delete;
@@ -130,6 +133,13 @@ public:
     // functioning correctly
     uint32_t sensor_status_flags() const;
 
+    static AP_Frsky_Telem *get_singleton(void) {
+        return singleton;
+    }
+
+    // get next telemetry data for external consumers of SPort data
+    static bool get_telem_data(uint8_t &frame, uint16_t &appid, uint32_t &data);
+
 private:
     AP_HAL::UARTDriver *_port;                  // UART used to send data to FrSky receiver
     AP_SerialManager::SerialProtocol _protocol; // protocol used - detected using SerialManager's SERIAL#_PROTOCOL parameter
@@ -138,11 +148,17 @@ private:
     uint32_t check_sensor_status_timer;
     uint32_t check_ekf_status_timer;
     uint8_t _paramID;
-    
-    ObjectArray<mavlink_statustext_t> _statustext_queue;
+
+    struct {
+        HAL_Semaphore sem;
+        ObjectBuffer<mavlink_statustext_t> queue{FRSKY_TELEM_PAYLOAD_STATUS_CAPACITY};
+        mavlink_statustext_t next;
+        bool available;
+    } _statustext;
     
     struct
     {
+        int32_t vario_vspd;
         char lat_ns, lon_ew;
         uint16_t latdddmm;
         uint16_t latmmmm;
@@ -154,7 +170,8 @@ private:
         uint16_t alt_nav_cm;
         int16_t speed_in_meter;
         uint16_t speed_in_centimeter;
-    } _gps;
+        uint16_t yaw;
+    } _SPort_data;
 
     struct PACKED
     {
@@ -172,7 +189,7 @@ private:
     struct
     {
         const uint32_t packet_min_period[TIME_SLOT_MAX] = {
-            0,      //0x5000 text,      no rate limiter
+            28,     //0x5000 text,      25Hz
             38,     //0x5006 attitude   20Hz
             280,    //0x800  GPS        3Hz
             280,    //0x800  GPS        3Hz
@@ -182,13 +199,15 @@ private:
             500,    //0x5004 home       2Hz
             500,    //0x5008 batt 2     2Hz
             500,    //0x5003 batt 1     2Hz
-            1000   //0x5007 parameters 1Hz
+            1000    //0x5007 parameters 1Hz
         };
     } _sport_config;
 
     struct
     {
         bool sport_status;
+        bool gps_refresh;
+        bool vario_refresh;
         uint8_t fas_call;
         uint8_t gps_call;
         uint8_t vario_call;
@@ -208,9 +227,10 @@ private:
         uint8_t char_index; // index of which character to get in the message
     } _msg_chunk;
     
+    float get_vspeed_ms(void);
     // passthrough WFQ scheduler
     void update_avg_packet_rate();
-    void passthrough_wfq_adaptive_scheduler(uint8_t prev_byte);
+    void passthrough_wfq_adaptive_scheduler();
     // main transmission function when protocol is FrSky SPort Passthrough (OpenTX)
     void send_SPort_Passthrough(void);
     // main transmission function when protocol is FrSky SPort
@@ -244,4 +264,26 @@ private:
     void calc_nav_alt(void);
     float format_gps(float dec);
     void calc_gps_position(void);
+
+    // setup ready for passthrough operation
+    void setup_passthrough(void);
+
+    // get next telemetry data for external consumers of SPort data (internal function)
+    bool _get_telem_data(uint8_t &frame, uint16_t &appid, uint32_t &data);
+    
+    static AP_Frsky_Telem *singleton;
+
+    // use_external_data is set when this library will
+    // be providing data to another transport, such as FPort
+    bool use_external_data;
+    struct {
+        uint8_t frame;
+        uint16_t appid;
+        uint32_t data;
+        bool pending;
+    } external_data;
+};
+
+namespace AP {
+    AP_Frsky_Telem *frsky_telem();
 };

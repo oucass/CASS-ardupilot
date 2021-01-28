@@ -52,7 +52,6 @@ class Board:
 
             env.DEFINES.update(
                 ENABLE_SCRIPTING = 1,
-                ENABLE_HEAP = 1,
                 LUA_32BITS = 1,
                 )
 
@@ -115,6 +114,7 @@ class Board:
             '-Wno-redundant-decls',
             '-Wno-unknown-pragmas',
             '-Wno-trigraphs',
+            '-Wno-format-contains-nul',
             '-Werror=shadow',
             '-Werror=return-type',
             '-Werror=unused-result',
@@ -151,6 +151,10 @@ class Board:
         if cfg.options.bootloader:
             # don't let bootloaders try and pull scripting in
             cfg.options.disable_scripting = True
+        else:
+            env.DEFINES.update(
+                ENABLE_HEAP = 1,
+            )
 
         if cfg.options.enable_math_check_indexes:
             env.CXXFLAGS += ['-DMATH_CHECK_INDEXES']
@@ -175,6 +179,7 @@ class Board:
             '-Wno-redundant-decls',
             '-Wno-unknown-pragmas',
             '-Wno-expansion-to-defined',
+            '-Wno-format-contains-nul',
             '-Werror=attributes',
             '-Werror=format-security',
             '-Werror=format-extra-args',
@@ -426,6 +431,7 @@ class chibios(Board):
         env.DEFINES.update(
             CONFIG_HAL_BOARD = 'HAL_BOARD_CHIBIOS',
             HAVE_STD_NULLPTR_T = 0,
+            USE_LIBC_REALLOC = 0,
         )
 
         env.AP_LIBRARIES += [
@@ -477,6 +483,7 @@ class chibios(Board):
             '--specs=nano.specs',
             '-specs=nosys.specs',
             '-DCHIBIOS_BOARD_NAME="%s"' % self.name,
+            '-Werror=deprecated-declarations'
         ]
         env.CXXFLAGS += env.CFLAGS + [
             '-fno-rtti',

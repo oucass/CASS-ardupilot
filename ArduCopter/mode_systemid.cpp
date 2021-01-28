@@ -10,10 +10,10 @@ const AP_Param::GroupInfo ModeSystemId::var_info[] = {
 
     // @Param: _AXIS
     // @DisplayName: System identification axis
-    // @Description: Controls which axis are being excited
+    // @Description: Controls which axis are being excited.  Set to non-zero to see more parameters
     // @User: Standard
     // @Values: 0:None, 1:Input Roll Angle, 2:Input Pitch Angle, 3:Input Yaw Angle, 4:Recovery Roll Angle, 5:Recovery Pitch Angle, 6:Recovery Yaw Angle, 7:Rate Roll, 8:Rate Pitch, 9:Rate Yaw, 10:Mixer Roll, 11:Mixer Pitch, 12:Mixer Yaw, 13:Mixer Thrust
-    AP_GROUPINFO("_AXIS", 1, ModeSystemId, axis, 0),
+    AP_GROUPINFO_FLAGS("_AXIS", 1, ModeSystemId, axis, 0, AP_PARAM_FLAG_ENABLE),
 
     // @Param: _MAGNITUDE
     // @DisplayName: System identification Chirp Magnitude
@@ -74,6 +74,12 @@ ModeSystemId::ModeSystemId(void) : Mode()
 // systemId_init - initialise systemId controller
 bool ModeSystemId::init(bool ignore_checks)
 {
+    // check if enabled
+    if (axis == 0) {
+        gcs().send_text(MAV_SEVERITY_WARNING, "No axis selected, SID_AXIS = 0");
+        return false;
+    }
+
     // if landed and the mode we're switching from does not have manual throttle and the throttle stick is too high
     if (motors->armed() && copter.ap.land_complete && !copter.flightmode->has_manual_throttle()) {
         return false;
@@ -128,21 +134,24 @@ void ModeSystemId::run()
         attitude_control->set_yaw_target_to_current_heading();
         attitude_control->reset_rate_controller_I_terms();
         break;
+
     case AP_Motors::SpoolState::GROUND_IDLE:
         // Landed
         // Tradheli initializes targets when going from disarmed to armed state. 
         // init_targets_on_arming is always set true for multicopter.
         if (motors->init_targets_on_arming()) {
             attitude_control->set_yaw_target_to_current_heading();
-            attitude_control->reset_rate_controller_I_terms();
+            attitude_control->reset_rate_controller_I_terms_smoothly();
         }
         break;
+
     case AP_Motors::SpoolState::THROTTLE_UNLIMITED:
         // clear landing flag above zero throttle
         if (!motors->limit.throttle_lower) {
             set_land_complete(false);
         }
         break;
+
     case AP_Motors::SpoolState::SPOOLING_UP:
     case AP_Motors::SpoolState::SPOOLING_DOWN:
         // do nothing

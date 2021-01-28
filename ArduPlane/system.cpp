@@ -135,8 +135,6 @@ void Plane::init_ardupilot()
 #if LANDING_GEAR_ENABLED == ENABLED
     // initialise landing gear position
     g2.landing_gear.init();
-    gear.last_auto_cmd = -1;
-    gear.last_cmd = -1;
 #endif
 
 #if FENCE_TRIGGERED_PIN > 0
@@ -181,6 +179,9 @@ void Plane::init_ardupilot()
     g2.gripper.init();
 #endif
 
+    // call AP_Vehicle setup code
+    vehicle_setup();
+
     // disable safety if requested
     BoardConfig.init_safety();
 
@@ -223,9 +224,7 @@ void Plane::startup_ground(void)
 #endif
 
 #ifdef ENABLE_SCRIPTING
-    if (!g2.scripting.init()) {
-        gcs().send_text(MAV_SEVERITY_ERROR, "Scripting failed to start");
-    }
+    g2.scripting.init();
 #endif // ENABLE_SCRIPTING
 
     // reset last heartbeat time, so we don't trigger failsafe on slow

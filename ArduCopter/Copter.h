@@ -88,6 +88,10 @@
  #define MOTOR_CLASS AP_MotorsMulticopter
 #endif
 
+#if MODE_AUTOROTATE_ENABLED == ENABLED
+ #include <AC_Autorotation/AC_Autorotation.h> // Autorotation controllers
+#endif
+
 #include "RC_Channel.h"         // RC Channel Library
 
 #include "GCS_Mavlink.h"
@@ -99,6 +103,7 @@
 #if BEACON_ENABLED == ENABLED
  #include <AP_Beacon/AP_Beacon.h>
 #endif
+
 #if AC_AVOID_ENABLED == ENABLED
  #include <AC_Avoidance/AC_Avoid.h>
 #endif
@@ -234,6 +239,7 @@ public:
     friend class ModeSystemId;
     friend class ModeThrow;
     friend class ModeZigZag;
+    friend class ModeAutorotate;
 
     Copter(void);
 
@@ -295,7 +301,8 @@ private:
         void set_target_alt_cm(float target_alt_cm);
 
         // get target and actual distances (in m) for logging purposes
-        bool get_dist_for_logging(float &target_dist, float &actual_dist) const;
+        bool get_target_dist_for_logging(float &target_dist) const;
+        float get_dist_for_logging() const;
         void invalidate_for_logging() { valid_for_logging = false; }
 
         // surface tracking surface
@@ -486,6 +493,7 @@ private:
     AC_PosControl *pos_control;
     AC_WPNav *wp_nav;
     AC_Loiter *loiter_nav;
+
 #if MODE_CIRCLE_ENABLED == ENABLED
     AC_Circle *circle_nav;
 #endif
@@ -584,6 +592,7 @@ private:
     typedef struct {
         uint8_t dynamic_flight          : 1;    // 0   // true if we are moving at a significant speed (used to turn on/off leaky I terms)
         uint8_t inverted_flight         : 1;    // 1   // true for inverted flight mode
+        uint8_t in_autorotation         : 1;    // 2   // true when heli is in autorotation
     } heli_flags_t;
     heli_flags_t heli_flags;
 
@@ -599,9 +608,6 @@ private:
     } gndeffect_state;
 
     bool standby_active;
-
-    // set when we are upgrading parameters from 3.4
-    bool upgrading_frame_params;
 
     static const AP_Scheduler::Task scheduler_tasks[];
     static const AP_Param::Info var_info[];
@@ -759,8 +765,12 @@ private:
     void check_dynamic_flight(void);
     void update_heli_control_dynamics(void);
     void heli_update_landing_swash();
+    float get_pilot_desired_rotor_speed() const;
     void heli_update_rotor_speed_targets();
-
+    void heli_update_autorotation();
+#if MODE_AUTOROTATE_ENABLED == ENABLED
+    void heli_set_autorotation(bool autotrotation);
+#endif
     // inertia.cpp
     void read_inertia();
 
@@ -769,7 +779,7 @@ private:
     void update_land_detector();
     void set_land_complete(bool b);
     void set_land_complete_maybe(bool b);
-    void update_throttle_thr_mix();
+    void update_throttle_mix();
 
     // landing_gear.cpp
     void landinggear_update();
@@ -904,13 +914,13 @@ private:
     // UserCode.cpp
     void userhook_init();
     void userhook_FastLoop();
-    void userhook_50Hz();
-    void userhook_MediumLoop();
-    void userhook_SlowLoop();
-    void userhook_SuperSlowLoop();
-    void userhook_auxSwitch1(uint8_t ch_flag);
-    void userhook_auxSwitch2(uint8_t ch_flag);
-    void userhook_auxSwitch3(uint8_t ch_flag);
+    void user_vpbatt_monitor();
+    void user_temperature_logger();
+    void user_humidity_logger();
+    void user_wind_vane();
+    void userhook_auxSwitch1();
+    void userhook_auxSwitch2();
+    void userhook_auxSwitch3();
 
     // CASS Mavlink message
     void send_cass_imet(mavlink_channel_t chan);
@@ -996,6 +1006,9 @@ private:
 #endif
 #if MODE_ZIGZAG_ENABLED == ENABLED
     ModeZigZag mode_zigzag;
+#endif
+#if MODE_AUTOROTATE_ENABLED == ENABLED
+    ModeAutorotate mode_autorotate;
 #endif
 
     // mode.cpp

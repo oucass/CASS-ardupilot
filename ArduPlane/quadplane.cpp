@@ -461,6 +461,15 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("TKOFF_ARSP_LIM", 15, QuadPlane, maximum_takeoff_airspeed, 0),
 
+    // @Param: ASSIST_ALT
+    // @DisplayName: Quadplane assistance altitude
+    // @Description: This is the altitude below which quadplane assistance will be triggered. This acts the same way as Q_ASSIST_ANGLE and Q_ASSIST_SPEED, but triggers if the aircraft drops below the given altitude while the VTOL motors are not running. A value of zero disables this feature. The altutude is calculated as being above ground level. The height above ground is given from a Lidar used if available and RNGFND_LANDING=1. Otherwise it comes from terrain data if TERRAIN_FOLLOW=1 and comes from height above home otherwise.
+    // @Units: m
+    // @Range: 0 120
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("ASSIST_ALT", 16, QuadPlane, assist_alt, 0),
+
     AP_GROUPEND
 };
 
@@ -1081,6 +1090,9 @@ void QuadPlane::init_qland(void)
     poscontrol.state = QPOS_LAND_DESCEND;
     landing_detect.lower_limit_start_ms = 0;
     landing_detect.land_start_ms = 0;
+#if LANDING_GEAR_ENABLED == ENABLED
+    plane.g2.landing_gear.deploy_for_landing();
+#endif
 }
 
 
@@ -1377,11 +1389,37 @@ bool QuadPlane::assistance_needed(float aspeed)
         angle_error_start_ms = 0;
         return false;
     }
+
     if (aspeed < assist_speed) {
         // assistance due to Q_ASSIST_SPEED
         in_angle_assist = false;
         angle_error_start_ms = 0;
         return true;
+    }
+
+    const uint32_t now = AP_HAL::millis();
+
+    /*
+      optional assistance when altitude is too close to the ground
+     */
+    if (assist_alt > 0) {
+        float height_above_ground = plane.relative_ground_altitude(plane.g.rangefinder_landing);
+        if (height_above_ground < assist_alt) {
+            if (alt_error_start_ms == 0) {
+                alt_error_start_ms = now;
+            }
+            if (now - alt_error_start_ms > 500) {
+                // we've been below assistant alt for 0.5s
+                if (!in_alt_assist) {
+                    in_alt_assist = true;
+                    gcs().send_text(MAV_SEVERITY_INFO, "Alt assist %.1fm", height_above_ground);
+                }
+                return true;
+            }
+        } else {
+            in_alt_assist = false;
+            alt_error_start_ms = 0;
+        }
     }
 
     if (assist_angle <= 0) {
@@ -1412,7 +1450,7 @@ bool QuadPlane::assistance_needed(float aspeed)
         in_angle_assist = false;
         return false;
     }
-    const uint32_t now = AP_HAL::millis();
+
     if (angle_error_start_ms == 0) {
         angle_error_start_ms = now;
     }
@@ -2329,6 +2367,10 @@ void QuadPlane::setup_target_position(void)
     // setup vertical speed and acceleration
     pos_control->set_max_speed_z(-pilot_velocity_z_max, pilot_velocity_z_max);
     pos_control->set_max_accel_z(pilot_accel_z);
+
+    // setup horizontal speed and acceleration
+    pos_control->set_max_speed_xy(wp_nav->get_default_speed_xy());
+    pos_control->set_max_accel_xy(wp_nav->get_wp_acceleration());
 }
 
 /*
@@ -2594,6 +2636,13 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
     set_alt_target_current();
 
     plane.complete_auto_takeoff();
+
+    if (plane.control_mode == &plane.mode_auto) {
+        // we reset TECS so that the target height filter is not
+        // constrained by the climb and sink rates from the initial
+        // takeoff height.
+        plane.SpdHgt_Controller->reset();
+    }
     
     return true;
 }
@@ -2681,6 +2730,9 @@ bool QuadPlane::verify_vtol_land(void)
     if (poscontrol.state == QPOS_POSITION2 &&
         plane.auto_state.wp_distance < 2) {
         poscontrol.state = QPOS_LAND_DESCEND;
+#if LANDING_GEAR_ENABLED == ENABLED
+        plane.g2.landing_gear.deploy_for_landing();
+#endif
         gcs().send_text(MAV_SEVERITY_INFO,"Land descend started");
         if (plane.control_mode == &plane.mode_auto) {
             // set height to mission height, so we can use the mission
@@ -2936,6 +2988,11 @@ bool QuadPlane::guided_mode_enabled(void)
     if (plane.control_mode != &plane.mode_guided && plane.control_mode != &plane.mode_auto) {
         return false;
     }
+    if (plane.control_mode == &plane.mode_auto &&
+        plane.mission.get_current_nav_cmd().id == MAV_CMD_NAV_LOITER_TURNS) {
+        // loiter turns is a fixed wing only operation
+        return false;
+    }
     return guided_mode != 0;
 }
 
@@ -3059,7 +3116,7 @@ float QuadPlane::stopping_distance(void)
 #define LAND_CHECK_LARGE_ANGLE_CD   1500.0f     // maximum angle target to be considered landing
 #define LAND_CHECK_ACCEL_MOVING     3.0f        // maximum acceleration after subtracting gravity
 
-void QuadPlane::update_throttle_thr_mix(void)
+void QuadPlane::update_throttle_mix(void)
 {
     // transition will directly manage the mix
     if (in_transition()) {
@@ -3067,7 +3124,7 @@ void QuadPlane::update_throttle_thr_mix(void)
     }
 
     // if disarmed or landed prioritise throttle
-    if(!motors->armed()) {
+    if (!motors->armed()) {
         attitude_control->set_throttle_mix_min();
         return;
     }
@@ -3098,7 +3155,7 @@ void QuadPlane::update_throttle_thr_mix(void)
         // check for requested decent
         bool descent_not_demanded = pos_control->get_desired_velocity().z >= 0.0f;
 
-        if ( large_angle_request || large_angle_error || accel_moving || descent_not_demanded) {
+        if (large_angle_request || large_angle_error || accel_moving || descent_not_demanded) {
             attitude_control->set_throttle_mix_max(1.0);
         } else {
             attitude_control->set_throttle_mix_min();
@@ -3136,4 +3193,12 @@ bool QuadPlane::in_vtol_land_descent(void) const
 bool QuadPlane::in_vtol_land_final(void) const
 {
     return in_vtol_land_descent() && poscontrol.state == QPOS_LAND_FINAL;
+}
+
+/*
+  see if we are in any of the phases of a VTOL landing
+ */
+bool QuadPlane::in_vtol_land_sequence(void) const
+{
+    return in_vtol_land_approach() || in_vtol_land_descent() || in_vtol_land_final();
 }

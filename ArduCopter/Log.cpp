@@ -41,10 +41,9 @@ void Copter::Log_Write_Control_Tuning()
     }
 
     // get surface tracking alts
-    float desired_rangefinder_alt, rangefinder_alt;
-    if (!surface_tracking.get_dist_for_logging(desired_rangefinder_alt, rangefinder_alt)) {
+    float desired_rangefinder_alt;
+    if (!surface_tracking.get_target_dist_for_logging(desired_rangefinder_alt)) {
         desired_rangefinder_alt = AP::logger().quiet_nan();
-        rangefinder_alt = AP::logger().quiet_nan();;
     }
 
     struct log_Control_Tuning pkt = {
@@ -58,7 +57,7 @@ void Copter::Log_Write_Control_Tuning()
         inav_alt            : inertial_nav.get_altitude() / 100.0f,
         baro_alt            : baro_alt,
         desired_rangefinder_alt : desired_rangefinder_alt,
-        rangefinder_alt     : rangefinder_alt,
+        rangefinder_alt     : surface_tracking.get_dist_for_logging(),
         terr_alt            : terr_alt,
         target_climb_rate   : target_climb_rate_cms,
         climb_rate          : int16_t(inertial_nav.get_velocity_z()), // float -> int16_t
@@ -463,7 +462,7 @@ const struct LogStructure Copter::log_structure[] = {
     { LOG_PARAMTUNE_MSG, sizeof(log_ParameterTuning),
       "PTUN", "QBfff",         "TimeUS,Param,TunVal,TunMin,TunMax", "s----", "F----" },
     { LOG_CONTROL_TUNING_MSG, sizeof(log_Control_Tuning),
-      "CTUN", "Qffffffefffhhf", "TimeUS,ThI,ABst,ThO,ThH,DAlt,Alt,BAlt,DSAlt,SAlt,TAlt,DCRt,CRt,N", "s----mmmmmmnnz", "F----00B0BBBB-" },
+      "CTUN", "Qffffffefffhhf", "TimeUS,ThI,ABst,ThO,ThH,DAlt,Alt,BAlt,DSAlt,SAlt,TAlt,DCRt,CRt,N", "s----mmmmmmnnz", "F----00B000BB-" },
     { LOG_MOTBATT_MSG, sizeof(log_MotBatt),
       "MOTB", "Qffff",  "TimeUS,LiftMax,BatVolt,BatRes,ThLimit", "s-vw-", "F-00-" },
     { LOG_DATA_INT16_MSG, sizeof(log_Data_Int16t),         
@@ -482,7 +481,7 @@ const struct LogStructure Copter::log_structure[] = {
 #endif
 #if PRECISION_LANDING == ENABLED
     { LOG_PRECLAND_MSG, sizeof(log_Precland),
-      "PL",    "QBBfffffffIIB",    "TimeUS,Heal,TAcq,pX,pY,vX,vY,mX,mY,mZ,LastMeasUS,EKFOutl,Est", "s--ddmmddms--","F--00BB00BC--" },
+      "PL",    "QBBfffffffIIB",    "TimeUS,Heal,TAcq,pX,pY,vX,vY,mX,mY,mZ,LastMeasMS,EKFOutl,Est", "s--mmnnmmms--","F--BBBBBBBC--" },
 #endif
     { LOG_SYSIDD_MSG, sizeof(log_SysIdD),
       "SIDD", "Qfffffffff",  "TimeUS,Time,Targ,F,Gx,Gy,Gz,Ax,Ay,Az", "ss-zkkkooo", "F---------" },
@@ -497,7 +496,7 @@ const struct LogStructure Copter::log_structure[] = {
     { LOG_RH_MSG, sizeof(log_RH),
       "RHUM", "QBBBBffffffff","Time,Hth1,Hth2,Hth3,Hth4,H1,H2,H3,H4,T1,T2,T3,T4","s------------","F000000000000"},
     { LOG_WIND_MSG, sizeof(log_WIND),
-      "WIND", "Qfffffff","Time,wdir,wspeed,dvar,gvar,avgR,avgP,yaw","s-------","F0000000"},
+      "WIND", "Qfffff","Time,wdir,wspeed,R13,R23,R33","s-----","F00000"},
 };
 
 void Copter::Log_Write_Vehicle_Startup_Messages()

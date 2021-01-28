@@ -32,6 +32,7 @@
 #include <uavcan/equipment/actuator/Status.hpp>
 
 #include <uavcan/equipment/esc/RawCommand.hpp>
+#include <uavcan/equipment/esc/Status.hpp>
 #include <uavcan/equipment/indication/LightsCommand.hpp>
 #include <uavcan/equipment/indication/SingleLightCommand.hpp>
 #include <uavcan/equipment/indication/BeepCommand.hpp>
@@ -39,6 +40,7 @@
 #include <ardupilot/indication/SafetyState.hpp>
 #include <ardupilot/indication/Button.hpp>
 #include <ardupilot/equipment/trafficmonitor/TrafficReport.hpp>
+#include <uavcan/equipment/gnss/RTCMStream.hpp>
 
 #include <AP_Baro/AP_Baro_UAVCAN.h>
 #include <AP_RangeFinder/AP_RangeFinder_UAVCAN.h>
@@ -50,6 +52,7 @@
 #include <AP_OpticalFlow/AP_OpticalFlow_HereFlow.h>
 #include <AP_ADSB/AP_ADSB.h>
 #include "AP_UAVCAN_DNA_Server.h"
+#include <AP_Logger/AP_Logger.h>
 
 #define LED_DELAY_US 50000
 
@@ -106,6 +109,7 @@ static uavcan::Publisher<uavcan::equipment::esc::RawCommand>* esc_raw[MAX_NUMBER
 static uavcan::Publisher<uavcan::equipment::indication::LightsCommand>* rgb_led[MAX_NUMBER_OF_CAN_DRIVERS];
 static uavcan::Publisher<uavcan::equipment::indication::BeepCommand>* buzzer[MAX_NUMBER_OF_CAN_DRIVERS];
 static uavcan::Publisher<ardupilot::indication::SafetyState>* safety_state[MAX_NUMBER_OF_CAN_DRIVERS];
+static uavcan::Publisher<uavcan::equipment::gnss::RTCMStream>* rtcm_stream[MAX_NUMBER_OF_CAN_DRIVERS];
 
 // subscribers
 
@@ -116,6 +120,14 @@ static uavcan::Subscriber<ardupilot::indication::Button, ButtonCb> *safety_butto
 // handler TrafficReport
 UC_REGISTRY_BINDER(TrafficReportCb, ardupilot::equipment::trafficmonitor::TrafficReport);
 static uavcan::Subscriber<ardupilot::equipment::trafficmonitor::TrafficReport, TrafficReportCb> *traffic_report_listener[MAX_NUMBER_OF_CAN_DRIVERS];
+
+// handler actuator status
+UC_REGISTRY_BINDER(ActuatorStatusCb, uavcan::equipment::actuator::Status);
+static uavcan::Subscriber<uavcan::equipment::actuator::Status, ActuatorStatusCb> *actuator_status_listener[MAX_NUMBER_OF_CAN_DRIVERS];
+
+// handler ESC status
+UC_REGISTRY_BINDER(ESCStatusCb, uavcan::equipment::esc::Status);
+static uavcan::Subscriber<uavcan::equipment::esc::Status, ESCStatusCb> *esc_status_listener[MAX_NUMBER_OF_CAN_DRIVERS];
 
 
 AP_UAVCAN::AP_UAVCAN() :
@@ -257,6 +269,10 @@ void AP_UAVCAN::init(uint8_t driver_index, bool enable_filters)
     safety_state[driver_index]->setTxTimeout(uavcan::MonotonicDuration::fromMSec(20));
     safety_state[driver_index]->setPriority(uavcan::TransferPriority::OneHigherThanLowest);
 
+    rtcm_stream[driver_index] = new uavcan::Publisher<uavcan::equipment::gnss::RTCMStream>(*_node);
+    rtcm_stream[driver_index]->setTxTimeout(uavcan::MonotonicDuration::fromMSec(20));
+    rtcm_stream[driver_index]->setPriority(uavcan::TransferPriority::OneHigherThanLowest);
+    
     safety_button_listener[driver_index] = new uavcan::Subscriber<ardupilot::indication::Button, ButtonCb>(*_node);
     if (safety_button_listener[driver_index]) {
         safety_button_listener[driver_index]->start(ButtonCb(this, &handle_button));
@@ -265,6 +281,16 @@ void AP_UAVCAN::init(uint8_t driver_index, bool enable_filters)
     traffic_report_listener[driver_index] = new uavcan::Subscriber<ardupilot::equipment::trafficmonitor::TrafficReport, TrafficReportCb>(*_node);
     if (traffic_report_listener[driver_index]) {
         traffic_report_listener[driver_index]->start(TrafficReportCb(this, &handle_traffic_report));
+    }
+
+    actuator_status_listener[driver_index] = new uavcan::Subscriber<uavcan::equipment::actuator::Status, ActuatorStatusCb>(*_node);
+    if (actuator_status_listener[driver_index]) {
+        actuator_status_listener[driver_index]->start(ActuatorStatusCb(this, &handle_actuator_status));
+    }
+
+    esc_status_listener[driver_index] = new uavcan::Subscriber<uavcan::equipment::esc::Status, ESCStatusCb>(*_node);
+    if (esc_status_listener[driver_index]) {
+        esc_status_listener[driver_index]->start(ESCStatusCb(this, &handle_ESC_status));
     }
     
     _led_conf.devices_count = 0;
@@ -337,6 +363,7 @@ void AP_UAVCAN::loop(void)
 
         led_out_send();
         buzzer_send();
+        rtcm_stream_send();
         safety_state_send();
         AP::uavcan_dna_server().verify_nodes(this);
     }
@@ -546,6 +573,36 @@ void AP_UAVCAN::set_buzzer_tone(float frequency, float duration_s)
     _buzzer.pending_mask = 0xFF;
 }
 
+void AP_UAVCAN::rtcm_stream_send()
+{
+    WITH_SEMAPHORE(_rtcm_stream.sem);
+    if (_rtcm_stream.buf == nullptr ||
+        _rtcm_stream.buf->available() == 0) {
+        // nothing to send
+        return;
+    }
+    uint32_t now = AP_HAL::millis();
+    if (now - _rtcm_stream.last_send_ms < 20) {
+        // don't send more than 50 per second
+        return;
+    }
+    _rtcm_stream.last_send_ms = now;
+    uavcan::equipment::gnss::RTCMStream msg;
+    uint32_t len = _rtcm_stream.buf->available();
+    if (len > 128) {
+        len = 128;
+    }
+    msg.protocol_id = uavcan::equipment::gnss::RTCMStream::PROTOCOL_ID_RTCM3;
+    for (uint8_t i=0; i<len; i++) {
+        uint8_t b;
+        if (!_rtcm_stream.buf->read_byte(&b)) {
+            return;
+        }
+        msg.data.push_back(b);
+    }
+    rtcm_stream[_driver_index]->broadcast(msg);
+}
+
 // SafetyState send
 void AP_UAVCAN::safety_state_send()
 {
@@ -568,6 +625,23 @@ void AP_UAVCAN::safety_state_send()
         return;
     }
     safety_state[_driver_index]->broadcast(msg);
+}
+
+/*
+ send RTCMStream packet on all active UAVCAN drivers
+*/
+void AP_UAVCAN::send_RTCMStream(const uint8_t *data, uint32_t len)
+{
+    WITH_SEMAPHORE(_rtcm_stream.sem);
+    if (_rtcm_stream.buf == nullptr) {
+        // give enough space for a full round from a NTRIP server with all
+        // constellations
+        _rtcm_stream.buf = new ByteBuffer(2400);
+    }
+    if (_rtcm_stream.buf == nullptr) {
+        return;
+    }
+    _rtcm_stream.buf->write(data, len);
 }
 
 /*
@@ -656,6 +730,37 @@ void AP_UAVCAN::handle_traffic_report(AP_UAVCAN* ap_uavcan, uint8_t node_id, con
 
     vehicle.last_update_ms = AP_HAL::millis() - (vehicle.info.tslc * 1000);
     adsb->handle_adsb_vehicle(vehicle);
+}
+
+/*
+  handle actuator status message
+ */
+void AP_UAVCAN::handle_actuator_status(AP_UAVCAN* ap_uavcan, uint8_t node_id, const ActuatorStatusCb &cb)
+{
+    // log as CSRV message
+    AP::logger().Write_ServoStatus(AP_HAL::micros64(),
+                                   cb.msg->actuator_id,
+                                   cb.msg->position,
+                                   cb.msg->force,
+                                   cb.msg->speed,
+                                   cb.msg->power_rating_pct);
+}
+
+/*
+  handle ESC status message
+ */
+void AP_UAVCAN::handle_ESC_status(AP_UAVCAN* ap_uavcan, uint8_t node_id, const ESCStatusCb &cb)
+{
+    // log as CESC message
+    AP::logger().Write_ESCStatus(AP_HAL::micros64(),
+                                 cb.msg->esc_index,
+                                 cb.msg->error_count,
+                                 cb.msg->voltage,
+                                 cb.msg->current,
+                                 cb.msg->temperature - C_TO_KELVIN,
+                                 cb.msg->rpm,
+                                 cb.msg->power_rating_pct);
+
 }
 
 #endif // HAL_WITH_UAVCAN

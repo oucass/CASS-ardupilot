@@ -10,17 +10,15 @@ float Copter::get_pilot_desired_yaw_rate(int16_t stick_angle)
     }
     float yaw_request;
 
+    // range check expo
+    g2.acro_y_expo = constrain_float(g2.acro_y_expo, 0.0f, 1.0f);
+
     // calculate yaw rate request
-    if (g2.acro_y_expo <= 0) {
+    if (is_zero(g2.acro_y_expo)) {
         yaw_request = stick_angle * g.acro_yaw_p;
     } else {
         // expo variables
         float y_in, y_in3, y_out;
-
-        // range check expo
-        if (g2.acro_y_expo > 1.0f || g2.acro_y_expo < 0.5f) {
-            g2.acro_y_expo = 1.0f;
-        }
 
         // yaw expo
         y_in = float(stick_angle)/ROLL_PITCH_YAW_INPUT_MAX;
@@ -40,7 +38,6 @@ float Copter::get_pilot_desired_yaw_rate(int16_t stick_angle)
 //  called at 100hz
 void Copter::update_throttle_hover()
 {
-#if FRAME_CONFIG != HELI_FRAME
     // if not armed or landed exit
     if (!motors->armed() || ap.land_complete) {
         return;
@@ -59,13 +56,12 @@ void Copter::update_throttle_hover()
     // get throttle output
     float throttle = motors->get_throttle();
 
-    // calc average throttle if we are in a level hover
+    // calc average throttle if we are in a level hover.  accounts for heli hover roll trim
     if (throttle > 0.0f && fabsf(inertial_nav.get_velocity_z()) < 60 &&
-        labs(ahrs.roll_sensor) < 500 && labs(ahrs.pitch_sensor) < 500) {
+        labs(ahrs.roll_sensor-attitude_control->get_roll_trim_cd()) < 500 && labs(ahrs.pitch_sensor) < 500) {
         // Can we set the time constant automatically
         motors->update_throttle_hover(0.01f);
     }
-#endif
 }
 
 // set_throttle_takeoff - allows parents to tell throttle controller we are taking off so I terms can be cleared

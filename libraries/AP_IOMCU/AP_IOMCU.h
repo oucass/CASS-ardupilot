@@ -71,6 +71,11 @@ public:
     // get the name of the RC protocol
     const char *get_rc_protocol(void);
 
+    // get receiver RSSI
+    int16_t get_RSSI(void) const {
+        return rc_input.rssi;
+    }
+    
     /*
       get servo rail voltage
      */
@@ -105,6 +110,10 @@ public:
 
     // channel group masks
     const uint8_t ch_masks[3] = { 0x03,0x0C,0xF0 };
+
+    static AP_IOMCU *get_singleton(void) {
+        return singleton;
+    }
 
 private:
     AP_HAL::UARTDriver &uart;
@@ -212,6 +221,8 @@ private:
     uint32_t total_errors;
     uint32_t num_delayed;
     uint32_t last_iocmu_timestamp_ms;
+    uint32_t read_status_errors;
+    uint32_t read_status_ok;
 
     // firmware upload
     const char *fw_name = "io_firmware.bin";
@@ -237,6 +248,8 @@ private:
     bool check_crc(void);
     void handle_repeated_failures();
     void check_iomcu_reset();
+
+    static AP_IOMCU *singleton;
 
     enum {
         PROTO_NOP               = 0x00,
@@ -268,6 +281,10 @@ private:
 
         PROG_MULTI_MAX    = 248,      /**< protocol max is 255, must be multiple of 4 */
     };
+};
+
+namespace AP {
+    AP_IOMCU *iomcu(void);
 };
 
 #endif // HAL_WITH_IO_MCU

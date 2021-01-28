@@ -59,6 +59,7 @@ public:
         MOTOR_FRAME_TYPE_DJI_X = 13, // X frame, DJI ordering
         MOTOR_FRAME_TYPE_CW_X = 14, // X frame, clockwise ordering
         MOTOR_FRAME_TYPE_I = 15, // (sideways H) octo only
+        MOTOR_FRAME_TYPE_BF_X_REV = 18, // X frame, betaflight ordering, reversed motors
     };
 
     // Constructor
@@ -143,6 +144,9 @@ public:
         uint8_t throttle_lower  : 1; // we have reached throttle's lower limit
         uint8_t throttle_upper  : 1; // we have reached throttle's upper limit
     } limit;
+
+    // set limit flag for pitch, roll and yaw
+    void set_limit_flag_pitch_roll_yaw(bool flag);
 
     //
     // virtual functions that should be implemented by child classes
@@ -259,4 +263,8 @@ protected:
 
 private:
     static AP_Motors *_singleton;
+};
+
+namespace AP {
+    AP_Motors *motors();
 };

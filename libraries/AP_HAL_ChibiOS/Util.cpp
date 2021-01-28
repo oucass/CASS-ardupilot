@@ -86,6 +86,26 @@ void *Util::allocate_heap_memory(size_t size)
     return heap;
 }
 
+/*
+  realloc implementation thanks to wolfssl, used by AP_Scripting
+ */
+void *Util::std_realloc(void *addr, size_t size)
+{
+    if (size == 0) {
+       free(addr);
+       return nullptr;
+    }
+    if (addr == nullptr) {
+        return malloc(size);
+    }
+    void *new_mem = malloc(size);
+    if (new_mem != nullptr) {
+        memcpy(new_mem, addr, chHeapGetSize(addr) > size ? size : chHeapGetSize(addr));
+        free(addr);
+    }
+    return new_mem;
+}
+
 void *Util::heap_realloc(void *heap, void *ptr, size_t new_size)
 {
     if (heap == nullptr) {
@@ -120,67 +140,6 @@ Util::safety_state Util::safety_switch_state(void)
     return ((RCOutput *)hal.rcout)->_safety_switch_state();
 #else
     return SAFETY_NONE;
-#endif
-}
-
-void Util::set_imu_temp(float current)
-{
-#if HAL_HAVE_IMU_HEATER
-    if (!heater.target || *heater.target == -1) {
-        return;
-    }
-
-    // average over temperatures to remove noise
-    heater.count++;
-    heater.sum += current;
-
-    // update once a second
-    uint32_t now = AP_HAL::millis();
-    if (now - heater.last_update_ms < 1000) {
-#if defined(HAL_HEATER_GPIO_PIN)
-        // output as duty cycle to local pin. Use a random sequence to
-        // prevent a periodic change to magnetic field
-        bool heater_on = (get_random16() < uint32_t(heater.output) * 0xFFFFU / 100U);
-        hal.gpio->write(HAL_HEATER_GPIO_PIN, heater_on);
-#endif
-        return;
-    }
-    heater.last_update_ms = now;
-
-    current = heater.sum / heater.count;
-    heater.sum = 0;
-    heater.count = 0;
-
-    // experimentally tweaked for Pixhawk2
-    const float kI = 0.3f;
-    const float kP = 200.0f;
-    float target = (float)(*heater.target);
-
-    // limit to 65 degrees to prevent damage
-    target = constrain_float(target, 0, 65);
-
-    float err = target - current;
-
-    heater.integrator += kI * err;
-    heater.integrator = constrain_float(heater.integrator, 0, 70);
-
-    heater.output = constrain_float(kP * err + heater.integrator, 0, 100);
-
-    //hal.console->printf("integrator %.1f out=%.1f temp=%.2f err=%.2f\n", heater.integrator, heater.output, current, err);
-
-#if HAL_WITH_IO_MCU
-    if (AP_BoardConfig::io_enabled()) {
-        // tell IOMCU to setup heater
-        iomcu.set_heater_duty_cycle(heater.output);
-    }
-#endif
-#endif // HAL_HAVE_IMU_HEATER
-}
-
-void Util::set_imu_target_temp(int8_t *target)
-{
-#if HAL_HAVE_IMU_HEATER
-    heater.target = target;
 #endif
 }
 
@@ -226,6 +185,13 @@ uint64_t Util::get_hw_rtc() const
 
 #if !defined(HAL_NO_FLASH_SUPPORT) && !defined(HAL_NO_ROMFS_SUPPORT)
 
+#if defined(HAL_NO_GCS) || defined(HAL_BOOTLOADER_BUILD)
+#define Debug(fmt, args ...)  do { hal.console->printf(fmt, ## args); } while (0)
+#else
+#include <GCS_MAVLink/GCS.h>
+#define Debug(fmt, args ...)  do { gcs().send_text(MAV_SEVERITY_INFO, fmt, ## args); } while (0)
+#endif
+
 Util::FlashBootloader Util::flash_bootloader()
 {
     uint32_t fw_size;
@@ -235,20 +201,23 @@ Util::FlashBootloader Util::flash_bootloader()
 
     const uint8_t *fw = AP_ROMFS::find_decompress(fw_name, fw_size);
     if (!fw) {
-        hal.console->printf("failed to find %s\n", fw_name);
+        Debug("failed to find %s\n", fw_name);
         return FlashBootloader::NOT_AVAILABLE;
     }
     // make sure size is multiple of 32
     fw_size = (fw_size + 31U) & ~31U;
 
+    // make sure size is multiple of 32
+    fw_size = (fw_size + 31U) & ~31U;
+
     const uint32_t addr = hal.flash->getpageaddr(0);
     if (!memcmp(fw, (const void*)addr, fw_size)) {
-        hal.console->printf("Bootloader up-to-date\n");
+        Debug("Bootloader up-to-date\n");
         AP_ROMFS::free(fw);
         return FlashBootloader::NO_CHANGE;
     }
 
-    hal.console->printf("Erasing\n");
+    Debug("Erasing\n");
     uint32_t erased_size = 0;
     uint8_t erase_page = 0;
     while (erased_size < fw_size) {
@@ -259,7 +228,7 @@ Util::FlashBootloader Util::flash_bootloader()
         }
         hal.scheduler->expect_delay_ms(1000);
         if (!hal.flash->erasepage(erase_page)) {
-            hal.console->printf("Erase %u failed\n", erase_page);
+            Debug("Erase %u failed\n", erase_page);
             AP_ROMFS::free(fw);
             return FlashBootloader::FAIL;
         }
@@ -267,27 +236,27 @@ Util::FlashBootloader Util::flash_bootloader()
         erase_page++;
     }
 
-    hal.console->printf("Flashing %s @%08x\n", fw_name, (unsigned int)addr);
+    Debug("Flashing %s @%08x\n", fw_name, (unsigned int)addr);
     const uint8_t max_attempts = 10;
     hal.flash->keep_unlocked(true);
     for (uint8_t i=0; i<max_attempts; i++) {
         hal.scheduler->expect_delay_ms(1000);
         bool ok = hal.flash->write(addr, fw, fw_size);
         if (!ok) {
-            hal.console->printf("Flash failed! (attempt=%u/%u)\n",
+            Debug("Flash failed! (attempt=%u/%u)\n",
                                 i+1,
                                 max_attempts);
             hal.scheduler->delay(100);
             continue;
         }
-        hal.console->printf("Flash OK\n");
+        Debug("Flash OK\n");
         hal.flash->keep_unlocked(false);
         AP_ROMFS::free(fw);
         return FlashBootloader::OK;
     }
 
     hal.flash->keep_unlocked(false);
-    hal.console->printf("Flash failed after %u attempts\n", max_attempts);
+    Debug("Flash failed after %u attempts\n", max_attempts);
     AP_ROMFS::free(fw);
     return FlashBootloader::FAIL;
 }
