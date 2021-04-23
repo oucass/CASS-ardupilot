@@ -27,11 +27,7 @@
 
 #include <AP_ADSB/AP_ADSB.h>
 
-// F_RCVRY possible parameter values
-#define AP_AVOIDANCE_RECOVERY_REMAIN_IN_AVOID_ADSB                  0
-#define AP_AVOIDANCE_RECOVERY_RESUME_PREVIOUS_FLIGHTMODE            1
-#define AP_AVOIDANCE_RECOVERY_RTL                                   2
-#define AP_AVOIDANCE_RECOVERY_RESUME_IF_AUTO_ELSE_LOITER            3
+#if HAL_ADSB_ENABLED
 
 #define AP_AVOIDANCE_STATE_RECOVERY_TIME_MS                 2000    // we will not downgrade state any faster than this (2 seconds)
 
@@ -51,6 +47,14 @@ public:
     static AP_Avoidance *get_singleton() {
         return _singleton;
     }
+
+    // F_RCVRY possible parameter values:
+    enum class RecoveryAction {
+        REMAIN_IN_AVOID_ADSB       = 0,
+        RESUME_PREVIOUS_FLIGHTMODE = 1,
+        RTL                        = 2,
+        RESUME_IF_AUTO_ELSE_LOITER = 3,
+    };
 
     // obstacle class to hold latest information for a known obstacles
     class Obstacle {
@@ -114,7 +118,7 @@ protected:
 
     // recover after all threats have cleared.  child classes must override this method
     // recovery_action is from F_RCVRY parameter
-    virtual void handle_recovery(uint8_t recovery_action) = 0;
+    virtual void handle_recovery(RecoveryAction recovery_action) = 0;
 
     uint32_t _last_state_change_ms = 0;
     MAV_COLLISION_THREAT_LEVEL _threat_level = MAV_COLLISION_THREAT_LEVEL_NONE;
@@ -136,7 +140,7 @@ protected:
     bool get_destination_perpendicular(const AP_Avoidance::Obstacle *obstacle, Vector3f &newdest_neu, const float wp_speed_xy, const float wp_speed_z, const uint8_t _minimum_avoid_height);
 
     // get unit vector away from the nearest obstacle
-    bool get_vector_perpendicular(const AP_Avoidance::Obstacle *obstacle, Vector3f &vec_neu);
+    bool get_vector_perpendicular(const AP_Avoidance::Obstacle *obstacle, Vector3f &vec_neu) const;
 
     // helper functions to calculate destination to get us away from obstacle
     // Note: v1 is NED
@@ -206,7 +210,7 @@ private:
     AP_Float    _warn_distance_z;
 
     // multi-thread support for avoidance
-    HAL_Semaphore_Recursive _rsem;
+    HAL_Semaphore _rsem;
 
     static AP_Avoidance *_singleton;
 };
@@ -227,3 +231,6 @@ float closest_approach_z(const Location &my_loc,
 namespace AP {
     AP_Avoidance *ap_avoidance();
 };
+
+#endif
+

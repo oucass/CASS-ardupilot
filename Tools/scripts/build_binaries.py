@@ -4,6 +4,8 @@
 script to build the latest binaries for each vehicle type, ready to upload
 Peter Barker, August 2017
 based on build_binaries.sh by Andrew Tridgell, March 2013
+
+AP_FLAKE8_CLEAN
 """
 
 from __future__ import print_function
@@ -14,18 +16,29 @@ import os
 import re
 import shutil
 import time
+import string
 import subprocess
 import sys
 import gzip
 
 # local imports
-import generate_manifest, gen_stable
+import generate_manifest
+import gen_stable
+import build_binaries_history
+
+if sys.version_info[0] < 3:
+    running_python3 = False
+else:
+    running_python3 = True
 
 
 class build_binaries(object):
     def __init__(self, tags):
         self.tags = tags
         self.dirty = False
+        binaries_history_filepath = os.path.join(self.buildlogs_dirpath(),
+                                                 "build_binaries_history.sqlite")
+        self.history = build_binaries_history.BuildBinariesHistory(binaries_history_filepath)
 
     def progress(self, string):
         '''pretty-print progress'''
@@ -74,6 +87,10 @@ class build_binaries(object):
                     # select not available on Windows... probably...
                 time.sleep(0.1)
                 continue
+            if running_python3:
+                x = bytearray(x)
+                x = filter(lambda x : chr(x) in string.printable, x)
+                x = "".join([chr(c) for c in x])
             output += x
             x = x.rstrip()
             if show_output:
@@ -114,7 +131,11 @@ is bob we will attempt to checkout bob-AVR'''
         if ctag == "latest":
             vtag = "master"
         else:
-            vtag = "%s-%s" % (vehicle, ctag)
+            tagvehicle = vehicle
+            if tagvehicle == "Rover":
+                # FIXME: Rover tags in git still named APMrover2 :-(
+                tagvehicle = "APMrover2"
+            vtag = "%s-%s" % (tagvehicle, ctag)
 
         branches = []
         if cframe is not None:
@@ -256,9 +277,9 @@ is bob we will attempt to checkout bob-AVR'''
         if not os.path.exists(versionfile):
             self.progress("%s does not exist" % (versionfile,))
             return
-        ss = ".*define +FIRMWARE_VERSION[	 ]+(?P<major>\d+)[ ]*,[ 	]*" \
-             "(?P<minor>\d+)[ ]*,[	 ]*(?P<point>\d+)[ ]*,[	 ]*" \
-             "(?P<type>[A-Z_]+)[	 ]*"
+        ss = r".*define +FIRMWARE_VERSION[	 ]+(?P<major>\d+)[ ]*,[ 	]*" \
+             r"(?P<minor>\d+)[ ]*,[	 ]*(?P<point>\d+)[ ]*,[	 ]*" \
+             r"(?P<type>[A-Z_]+)[	 ]*"
         content = self.read_string_from_filepath(versionfile)
         match = re.search(ss, content)
         if match is None:
@@ -331,9 +352,13 @@ is bob we will attempt to checkout bob-AVR'''
         self.progress("Building %s %s binaries (cwd=%s)" %
                       (vehicle, tag, os.getcwd()))
 
-        for board in boards:
+        board_count = len(boards)
+        count = 0
+        for board in sorted(boards, key=str.lower):
             now = datetime.datetime.now()
-            self.progress("Building board: %s at %s" % (board, str(now)))
+            count += 1
+            self.progress("[%u/%u] Building board: %s at %s" %
+                          (count, board_count, board, str(now)))
             for frame in frames:
                 if frame is not None:
                     self.progress("Considering frame %s for board %s" %
@@ -367,11 +392,13 @@ is bob we will attempt to checkout bob-AVR'''
 
                 if self.skip_board_waf(board):
                     continue
-                
+
                 if os.path.exists(self.buildroot):
                     shutil.rmtree(self.buildroot)
 
                 self.remove_tmpdir()
+
+                githash = self.run_git(["rev-parse", "HEAD"]).rstrip()
 
                 t0 = time.time()
 
@@ -396,11 +423,16 @@ is bob we will attempt to checkout bob-AVR'''
                            (vehicle, board, framesuffix, tag))
                     self.progress(msg)
                     self.error_strings.append(msg)
+                    # record some history about this build
+                    t1 = time.time()
+                    time_taken_to_build = t1-t0
+                    self.history.record_build(githash, tag, vehicle, board, frame, None, t0, time_taken_to_build)
                     continue
 
                 t1 = time.time()
+                time_taken_to_build = t1-t0
                 self.progress("Building %s %s %s %s took %u seconds" %
-                              (vehicle, tag, board, frame, t1-t0))
+                              (vehicle, tag, board, frame, time_taken_to_build))
 
                 bare_path = os.path.join(self.buildroot,
                                          board,
@@ -415,8 +447,10 @@ is bob we will attempt to checkout bob-AVR'''
                     filepath = "".join([bare_path, extension])
                     if os.path.exists(filepath):
                         files_to_copy.append(filepath)
+                if not os.path.exists(bare_path):
+                    raise Exception("No elf file?!")
                 # only copy the elf if we don't have other files to copy
-                if os.path.exists(bare_path) and len(files_to_copy) == 0:
+                if len(files_to_copy) == 0:
                     files_to_copy.append(bare_path)
 
                 for path in files_to_copy:
@@ -427,6 +461,9 @@ is bob we will attempt to checkout bob-AVR'''
                 # why is touching this important? -pb20170816
                 self.touch_filepath(os.path.join(self.binaries,
                                                  vehicle_binaries_subdir, tag))
+
+                # record some history about this build
+                self.history.record_build(githash, tag, vehicle, board, frame, bare_path, t0, time_taken_to_build)
 
         if not self.checkout(vehicle, tag, "PX4", None):
             self.checkout(vehicle, "latest")
@@ -525,7 +562,6 @@ is bob we will attempt to checkout bob-AVR'''
         '''returns list of boards common to all vehicles'''
         return ["fmuv2",
                 "fmuv3",
-                "fmuv4",
                 "fmuv5",
                 "mindpx-v2",
                 "erlebrain2",
@@ -537,35 +573,55 @@ is bob we will attempt to checkout bob-AVR'''
                 "KakuteF4",
                 "KakuteF7",
                 "KakuteF7Mini",
+                "MambaF405v2",
                 "MatekF405",
+                "MatekF405-bdshot",
                 "MatekF405-STD",
                 "MatekF405-Wing",
                 "MatekF765-Wing",
+                "MatekF405-CAN",
+                "MatekH743",
+                "MatekH743-bdshot",
                 "OMNIBUSF7V2",
                 "sparky2",
                 "omnibusf4",
                 "omnibusf4pro",
+                "omnibusf4pro-bdshot",
                 "omnibusf4v6",
                 "OmnibusNanoV6",
+                "OmnibusNanoV6-bdshot",
                 "mini-pix",
                 "airbotf4",
                 "revo-mini",
+                "revo-mini-bdshot",
+                "revo-mini-i2c",
+                "revo-mini-i2c-bdshot",
                 "CubeBlack",
                 "CubeBlack+",
                 "CubePurple",
                 "Pixhawk1",
                 "Pixhawk1-1M",
                 "Pixhawk4",
+                "Pix32v5",
                 "PH4-mini",
                 "CUAVv5",
                 "CUAVv5Nano",
+                "CUAV-Nora",
+                "CUAV-X7",
+                "CUAV-X7-bdshot",
                 "mRoX21",
                 "Pixracer",
+                "Pixracer-bdshot",
                 "F4BY",
                 "mRoX21-777",
                 "mRoControlZeroF7",
+                "mRoNexus",
+                "mRoPixracerPro",
+                "mRoPixracerPro-bdshot",
+                "mRoControlZeroOEMH7",
                 "F35Lightning",
                 "speedybeef4",
+                "SuccexF4",
                 "DrotekP3Pro",
                 "VRBrain-v51",
                 "VRBrain-v52",
@@ -574,8 +630,16 @@ is bob we will attempt to checkout bob-AVR'''
                 "VRBrain-v54",
                 "TBS-Colibri-F7",
                 "Durandal",
+                "Durandal-bdshot",
                 "CubeOrange",
+                "CubeOrange-bdshot",
                 "CubeYellow",
+                "R9Pilot",
+                "QioTekZealotF427",
+                "BeastH7",
+                "BeastF7",
+                "FlywooF745",
+                "luminousbee5",
                 # SITL targets
                 "SITL_x86_64_linux_gnu",
                 "SITL_arm_linux_gnueabihf",
@@ -587,8 +651,18 @@ is bob we will attempt to checkout bob-AVR'''
                 "f103-ADSB",
                 "f103-RangeFinder",
                 "f303-GPS",
+                "f303-Universal",
+                "f303-M10025",
+                "f303-M10070",
+                "f303-MatekGPS",
+                "f405-MatekGPS",
+                "f103-Airspeed",
                 "CUAV_GPS",
                 "ZubaxGNSS",
+                "CubeOrange-periph",
+                "CubeBlack-periph",
+                "MatekH743-periph",
+                "HitecMosaic",
                 ]
 
     def build_arducopter(self, tag):
@@ -629,11 +703,11 @@ is bob we will attempt to checkout bob-AVR'''
         '''build Rover binaries'''
         boards = self.common_boards()
         self.build_vehicle(tag,
-                           "APMrover2",
+                           "Rover",
                            boards,
                            "Rover",
                            "ardurover",
-                           "APMrover2")
+                           "Rover")
 
     def build_ardusub(self, tag):
         '''build Sub binaries'''
@@ -654,7 +728,6 @@ is bob we will attempt to checkout bob-AVR'''
                            "AP_Periph",
                            "AP_Periph")
 
-        
     def generate_manifest(self):
         '''generate manigest files for GCS to download'''
         self.progress("Generating manifest")
@@ -669,6 +742,8 @@ is bob we will attempt to checkout bob-AVR'''
         new_json_filepath_gz = os.path.join(self.binaries,
                                             "manifest.json.gz.new")
         with gzip.open(new_json_filepath_gz, 'wb') as gf:
+            if running_python3:
+                content = bytes(content, 'ascii')
             gf.write(content)
         json_filepath = os.path.join(self.binaries, "manifest.json")
         json_filepath_gz = os.path.join(self.binaries, "manifest.json.gz")
@@ -679,7 +754,6 @@ is bob we will attempt to checkout bob-AVR'''
         self.progress("Generating stable releases")
         gen_stable.make_all_stable(self.binaries)
         self.progress("Generate stable releases done")
-
 
     def validate(self):
         '''run pre-run validation checks'''
@@ -757,12 +831,14 @@ is bob we will attempt to checkout bob-AVR'''
                                       "binaries.build")
 
         for tag in self.tags:
+            t0 = time.time()
             self.build_arducopter(tag)
             self.build_arduplane(tag)
             self.build_rover(tag)
             self.build_antennatracker(tag)
             self.build_ardusub(tag)
             self.build_AP_Periph(tag)
+            self.history.record_run(githash, tag, t0, time.time()-t0)
 
         if os.path.exists(self.tmpdir):
             shutil.rmtree(self.tmpdir)

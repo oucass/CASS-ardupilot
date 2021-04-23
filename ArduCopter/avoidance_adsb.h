@@ -19,12 +19,15 @@ private:
     // helper function to set modes and always succeed
     void set_mode_else_try_RTL_else_LAND(Mode::Number mode);
 
+    // get minimum limit altitude allowed on descend
+    int16_t get_altitude_minimum() const;
+
 protected:
     // override avoidance handler
     MAV_COLLISION_ACTION handle_avoidance(const AP_Avoidance::Obstacle *obstacle, MAV_COLLISION_ACTION requested_action) override;
 
     // override recovery handler
-    void handle_recovery(uint8_t recovery_action) override;
+    void handle_recovery(RecoveryAction recovery_action) override;
 
     // check flight mode is avoid_adsb
     bool check_flightmode(bool allow_mode_change);

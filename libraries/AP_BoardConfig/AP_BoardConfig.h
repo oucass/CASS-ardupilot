@@ -18,10 +18,6 @@
 #define AP_FEATURE_RTSCTS 0
 #endif
 
-#ifndef AP_FEATURE_RTSCTS
-#define AP_FEATURE_RTSCTS 0
-#endif
-
 #ifndef AP_FEATURE_SBUS_OUT
 #define AP_FEATURE_SBUS_OUT 0
 #endif
@@ -89,8 +85,8 @@ public:
         VRX_BOARD_UBRAIN52 = 35,
         VRX_BOARD_CORE10   = 36,
         VRX_BOARD_BRAIN54  = 38,
-        PX4_BOARD_OLDDRIVERS = 100,
         PX4_BOARD_FMUV6    = 39,
+        PX4_BOARD_OLDDRIVERS = 100,
     };
 
     // set default value for BRD_SAFETY_MASK
@@ -108,7 +104,7 @@ public:
     // developer debugging by setting BRD_IO_ENABLE=100 to avoid the
     // crc check of IO firmware on startup
     static uint8_t io_enabled(void) {
-#if AP_FEATURE_BOARD_DETECT
+#if HAL_WITH_IO_MCU
         return _singleton?uint8_t(_singleton->state.io_enable.get()):0;
 #else
         return 0;
@@ -120,6 +116,11 @@ public:
         return _singleton?_singleton->pwm_count.get():8;
     }
 
+    // get alternative config selection
+    uint8_t get_alt_config(void) {
+        return uint8_t(_alt_config.get());
+    }
+    
     enum board_safety_button_option {
         BOARD_SAFETY_OPTION_BUTTON_ACTIVE_SAFETY_OFF= (1 << 0),
         BOARD_SAFETY_OPTION_BUTTON_ACTIVE_SAFETY_ON=  (1 << 1),
@@ -128,7 +129,7 @@ public:
     };
 
     // return safety button options. Bits are in enum board_safety_button_option
-    uint16_t get_safety_button_options(void) {
+    uint16_t get_safety_button_options(void) const {
         return uint16_t(state.safety_option.get());
     }
 
@@ -163,19 +164,36 @@ public:
 
     enum board_options {
         BOARD_OPTION_WATCHDOG = (1 << 0),
+        DISABLE_FTP = (1<<1),
+        ALLOW_SET_INTERNAL_PARM = (1<<2),
     };
+
+    // return true if ftp is disabled
+    static bool ftp_disabled(void) {
+        return _singleton?(_singleton->_options & DISABLE_FTP)!=0:1;
+    }
 
     // return true if watchdog enabled
     static bool watchdog_enabled(void) {
         return _singleton?(_singleton->_options & BOARD_OPTION_WATCHDOG)!=0:HAL_WATCHDOG_ENABLED_DEFAULT;
     }
 
+    // return true if we allow setting of internal parameters (for developers)
+    static bool allow_set_internal_parameters(void) {
+        return _singleton?(_singleton->_options & ALLOW_SET_INTERNAL_PARM)!=0:false;
+    }
+    
     // handle press of safety button. Return true if safety state
     // should be toggled
     bool safety_button_handle_pressed(uint8_t press_count);
 
 #if HAL_HAVE_IMU_HEATER
     void set_imu_temp(float current_temp_c);
+
+    // heater duty cycle is as a percentage (0 to 100)
+    float get_heater_duty_cycle(void) const {
+        return heater.output;
+    }
 #endif
 
 private:
@@ -189,8 +207,7 @@ private:
         AP_Int16 safety_option;
         AP_Int32 ignore_safety_channels;
 #if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
-        AP_Int8 ser1_rtscts;
-        AP_Int8 ser2_rtscts;
+        AP_Int8 ser_rtscts[6];
         AP_Int8 sbus_out_rate;
 #endif
         AP_Int8 board_type;
@@ -202,9 +219,10 @@ private:
 
     void board_setup_drivers(void);
     bool spi_check_register(const char *devname, uint8_t regnum, uint8_t value, uint8_t read_flag = 0x80);
+    bool spi_check_register_inv2(const char *devname, uint8_t regnum, uint8_t value, uint8_t read_flag = 0x80);
     void validate_board_type(void);
-    void check_cubeblack(void);
     void board_autodetect(void);
+    bool check_ms5611(const char* devname);
 
 #endif // AP_FEATURE_BOARD_DETECT
 
@@ -255,6 +273,8 @@ private:
     AP_Int16 _boot_delay_ms;
 
     AP_Int32 _options;
+
+    AP_Int8  _alt_config;
 };
 
 namespace AP {

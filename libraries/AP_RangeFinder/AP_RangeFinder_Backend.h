@@ -32,12 +32,15 @@ public:
     virtual void update() = 0;
 
     virtual void handle_msg(const mavlink_message_t &msg) { return; }
+#if HAL_MSP_RANGEFINDER_ENABLED
+    virtual void handle_msp(const MSP::msp_rangefinder_data_message_t &pkt) { return; }
+#endif
 
     enum Rotation orientation() const { return (Rotation)params.orientation.get(); }
     uint16_t distance_cm() const { return state.distance_cm; }
     uint16_t voltage_mv() const { return state.voltage_mv; }
-    int16_t max_distance_cm() const { return params.max_distance_cm; }
-    int16_t min_distance_cm() const { return params.min_distance_cm; }
+    virtual int16_t max_distance_cm() const { return params.max_distance_cm; }
+    virtual int16_t min_distance_cm() const { return params.min_distance_cm; }
     int16_t ground_clearance_cm() const { return params.ground_clearance_cm; }
     MAV_DISTANCE_SENSOR get_mav_distance_sensor_type() const;
     RangeFinder::Status status() const;
@@ -55,6 +58,9 @@ public:
 
     // return system time of last successful read from the sensor
     uint32_t last_reading_ms() const { return state.last_reading_ms; }
+
+    // get temperature reading in C.  returns true on success and populates temp argument
+    virtual bool get_temp(float &temp) { return false; }
 
 protected:
 

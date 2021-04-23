@@ -1,10 +1,11 @@
 #pragma once
 #include <AP_HAL/AP_HAL.h>
 
-#if HAL_WITH_UAVCAN
+#if HAL_MAX_CAN_PROTOCOL_DRIVERS
 #include <uavcan/uavcan.hpp>
 #include <AP_Common/Bitmask.h>
 #include <StorageManager/StorageManager.h>
+#include <AP_CANManager/AP_CANManager.h>
 
 //Forward declaring classes
 class AllocationCb;
@@ -30,12 +31,15 @@ class AP_UAVCAN_DNA_Server
 
     uint32_t last_verification_request;
     uint8_t curr_verifying_node;
-    uint8_t self_node_id[MAX_NUMBER_OF_CAN_DRIVERS];
+    uint8_t self_node_id[HAL_MAX_CAN_PROTOCOL_DRIVERS];
     bool nodeInfo_resp_rcvd;
 
     Bitmask<128> occupation_mask;
     Bitmask<128> verified_mask;
     Bitmask<128> node_seen_mask;
+    Bitmask<128> logged;
+
+    uint8_t last_logging_count;
 
     //Error State
     enum ServerState server_state;
@@ -48,6 +52,7 @@ class AP_UAVCAN_DNA_Server
     uint8_t rcvd_unique_id_offset;
     uint8_t current_driver_index;
     uint32_t last_activity_ms;
+    uint32_t last_alloc_msg_ms;
 
     //Methods to handle and report Node IDs seen on the bus
     void addToSeenNodeMask(uint8_t node_id);
@@ -82,6 +87,8 @@ class AP_UAVCAN_DNA_Server
     //Look in the storage and check if there's a valid Server Record there
     bool isValidNodeDataAvailable(uint8_t node_id);
 
+    HAL_Semaphore sem;
+
 public:
     AP_UAVCAN_DNA_Server(StorageAccess _storage) : storage(_storage) {}
 
@@ -111,7 +118,7 @@ public:
     //Callbacks
     void handleAllocation(uint8_t driver_index, uint8_t node_id, const AllocationCb &cb);
     void handleNodeStatus(uint8_t node_id, const NodeStatusCb &cb);
-    void handleNodeInfo(uint8_t node_id, uint8_t unique_id[], char name[]);
+    void handleNodeInfo(uint8_t node_id, uint8_t unique_id[], char name[], uint8_t major, uint8_t minor, uint32_t vcs_commit);
 
     //Run through the list of seen node ids for verification
     void verify_nodes(AP_UAVCAN *ap_uavcan);

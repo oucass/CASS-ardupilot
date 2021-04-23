@@ -68,9 +68,7 @@ bool AP_Airspeed_SDP3X::init()
         if (!_dev) {
             continue;
         }
-        if (!_dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-            continue;
-        }
+        _dev->get_semaphore()->take_blocking();
 
         // lots of retries during probe
         _dev->set_retries(10);
@@ -84,9 +82,7 @@ bool AP_Airspeed_SDP3X::init()
         // these delays are needed for reliable operation
         _dev->get_semaphore()->give();
         hal.scheduler->delay_microseconds(20000);
-        if (!_dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-            continue;
-        }
+        _dev->get_semaphore()->take_blocking();
 
         // start continuous average mode
         if (!_send_command(SDP3X_CONT_MEAS_AVG_MODE)) {
@@ -97,9 +93,7 @@ bool AP_Airspeed_SDP3X::init()
         // these delays are needed for reliable operation
         _dev->get_semaphore()->give();
         hal.scheduler->delay_microseconds(20000);
-        if (!_dev->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-            continue;
-        }
+        _dev->get_semaphore()->take_blocking();
 
         // step 3 - get scale
         uint8_t val[9];
@@ -205,7 +199,7 @@ float AP_Airspeed_SDP3X::_correct_pressure(float press)
     case AP_Airspeed::PITOT_TUBE_ORDER_NEGATIVE:
         press = -press;
         sign = -1.0f;
-    //FALLTHROUGH;
+        break;
     case AP_Airspeed::PITOT_TUBE_ORDER_POSITIVE:
         break;
     case AP_Airspeed::PITOT_TUBE_ORDER_AUTO:
@@ -265,6 +259,10 @@ float AP_Airspeed_SDP3X::_correct_pressure(float press)
 
     // airspeed ratio
     float ratio = get_airspeed_ratio();
+    if (!is_positive(ratio)) {
+        // cope with AP_Periph where ratio is 0
+        ratio = 2.0;
+    }
 
     // calculate equivalent pressure correction. This formula comes
     // from turning the dv correction above into an equivalent
@@ -316,7 +314,7 @@ bool AP_Airspeed_SDP3X::get_temperature(float &temperature)
 /*
   check CRC for a set of bytes
  */
-bool AP_Airspeed_SDP3X::_crc(const uint8_t data[], unsigned size, uint8_t checksum)
+bool AP_Airspeed_SDP3X::_crc(const uint8_t data[], uint8_t size, uint8_t checksum)
 {
     uint8_t crc_value = 0xff;
 

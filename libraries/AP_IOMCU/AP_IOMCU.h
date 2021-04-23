@@ -71,6 +71,11 @@ public:
     // get the name of the RC protocol
     const char *get_rc_protocol(void);
 
+    // get receiver RSSI
+    int16_t get_RSSI(void) const {
+        return rc_input.rssi;
+    }
+    
     /*
       get servo rail voltage
      */
@@ -154,8 +159,9 @@ private:
     void read_servo(void);
     void read_status(void);
     void discard_input(void);
-    void event_failed(uint8_t event);
+    void event_failed(uint32_t event_mask);
     void update_safety_options(void);
+    void send_rc_protocols(void);
 
     // CONFIG page
     struct page_config config;
@@ -195,6 +201,8 @@ private:
         uint16_t chmask;
         uint16_t default_freq = 50;
         uint16_t sbus_rate_hz;
+        bool oneshot_enabled;
+        bool brushed_enabled;
     } rate;
 
     // IMU heater duty cycle
@@ -216,6 +224,9 @@ private:
     uint32_t total_errors;
     uint32_t num_delayed;
     uint32_t last_iocmu_timestamp_ms;
+    uint32_t read_status_errors;
+    uint32_t read_status_ok;
+    uint32_t last_rc_protocols;
 
     // firmware upload
     const char *fw_name = "io_firmware.bin";

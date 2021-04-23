@@ -10,9 +10,10 @@ from param import (Library, Parameter, Vehicle, known_group_fields,
                    known_param_fields, required_param_fields, known_units)
 from htmlemit import HtmlEmit
 from rstemit import RSTEmit
-from wikiemit import WikiEmit
 from xmlemit import XmlEmit
 from mdemit import MDEmit
+from jsonemit import JSONEmit
+from xmlemit_mp import XmlEmitMP
 
 parser = ArgumentParser(description="Parse ArduPilot parameters.")
 parser.add_argument("-v", "--verbose", dest='verbose', action='store_true', default=False, help="show debugging output")
@@ -26,32 +27,42 @@ parser.add_argument("--format",
                     dest='output_format',
                     action='store',
                     default='all',
-                    choices=['all', 'html', 'rst', 'wiki', 'xml', 'edn', 'md'],
+                    choices=['all', 'html', 'rst', 'wiki', 'xml', 'json', 'edn', 'md', 'xml_mp'],
                     help="what output format to use")
+parser.add_argument("--sitl",
+                    dest='emit_sitl',
+                    action='store_true',
+                    default=False,
+                    help="true to only emit sitl parameters, false to not emit sitl parameters")
+
 args = parser.parse_args()
 
 
 # Regular expressions for parsing the parameter metadata
 
-prog_param = re.compile(r"@Param: (\w+).*((?:\n[ \t]*// @(\w+)(?:{([^}]+)})?: (.*))+)(?:\n\n|\n[ \t]+[A-Z])", re.MULTILINE)
+prog_param = re.compile(r"@Param(?:{([^}]+)})?: (\w+).*((?:\n[ \t]*// @(\w+)(?:{([^}]+)})?: ?(.*))+)(?:\n[ \t\r]*\n|\n[ \t]+[A-Z])", re.MULTILINE)
 
 # match e.g @Value: 0=Unity, 1=Koala, 17=Liability
-prog_param_fields = re.compile(r"[ \t]*// @(\w+): (.*)")
+prog_param_fields = re.compile(r"[ \t]*// @(\w+): ?([^\r\n]*)")
 # match e.g @Value{Copter}: 0=Volcano, 1=Peppermint
-prog_param_tagged_fields = re.compile(r"[ \t]*// @(\w+){([^}]+)}: (.*)")
+prog_param_tagged_fields = re.compile(r"[ \t]*// @(\w+){([^}]+)}: ([^\r\n]*)")
 
 prog_groups = re.compile(r"@Group: *(\w+).*((?:\n[ \t]*// @(Path): (\S+))+)", re.MULTILINE)
 
 apm_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../')
 vehicle_paths = glob.glob(apm_path + "%s/Parameters.cpp" % args.vehicle)
-extension = 'cpp'
-if len(vehicle_paths) == 0:
-    vehicle_paths = glob.glob(apm_path + "%s/Parameters.pde" % args.vehicle)
-    extension = 'pde'
+apm_tools_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../Tools/')
+vehicle_paths += glob.glob(apm_tools_path + "%s/Parameters.cpp" % args.vehicle)
 vehicle_paths.sort(reverse=True)
 
 vehicles = []
 libraries = []
+
+# AP_Vehicle also has parameters rooted at "", but isn't referenced
+# from the vehicle in any way:
+ap_vehicle_lib = Library("") # the "" is tacked onto the front of param name
+setattr(ap_vehicle_lib, "Path", os.path.join('..', 'libraries', 'AP_Vehicle', 'AP_Vehicle.cpp'))
+libraries.append(ap_vehicle_lib)
 
 error_count = 0
 current_param = None
@@ -69,19 +80,22 @@ def error(str_to_print):
     global error_count
     error_count += 1
     if current_file is not None:
-        print("In %s" % current_file)
+        print("Error in %s" % current_file)
     if current_param is not None:
         print("At param %s" % current_param)
     print(str_to_print)
 
 
 truename_map = {
-    "APMrover2": "Rover",
+    "Rover": "Rover",
     "ArduSub": "Sub",
     "ArduCopter": "Copter",
     "ArduPlane": "Plane",
     "AntennaTracker": "Tracker",
+    "AP_Periph": "AP_Periph",
 }
+valid_truenames = frozenset(truename_map.values())
+
 for vehicle_path in vehicle_paths:
     name = os.path.basename(os.path.dirname(vehicle_path))
     path = os.path.normpath(os.path.dirname(vehicle_path))
@@ -94,12 +108,11 @@ if len(vehicles) > 1 or len(vehicles) == 0:
 
 for vehicle in vehicles:
     debug("===\n\n\nProcessing %s" % vehicle.name)
-    current_file = vehicle.path+'/Parameters.' + extension
+    current_file = vehicle.path+'/Parameters.cpp'
 
     f = open(current_file)
     p_text = f.read()
     f.close()
-    param_matches = prog_param.findall(p_text)
     group_matches = prog_groups.findall(p_text)
 
     debug(group_matches)
@@ -114,17 +127,31 @@ for vehicle in vehicles:
         if not any(lib.name == parsed_l.name for parsed_l in libraries):
             libraries.append(lib)
 
+    param_matches = []
+    if not args.emit_sitl:
+        param_matches = prog_param.findall(p_text)
+
+
     for param_match in param_matches:
-        p = Parameter(vehicle.name+":"+param_match[0], current_file)
+        (only_vehicles, param_name, field_text) = (param_match[0],
+                                                   param_match[1],
+                                                   param_match[2])
+        if len(only_vehicles):
+            only_vehicles_list = [x.strip() for x in only_vehicles.split(",")]
+            for only_vehicle in only_vehicles_list:
+                if only_vehicle not in valid_truenames:
+                    raise ValueError("Invalid only_vehicle %s" % only_vehicle)
+            if vehicle.truename not in only_vehicles_list:
+                continue
+        p = Parameter(vehicle.name+":"+param_name, current_file)
         debug(p.name + ' ')
         current_param = p.name
-        field_text = param_match[1]
         fields = prog_param_fields.findall(field_text)
         field_list = []
         for field in fields:
             field_list.append(field[0])
             if field[0] in known_param_fields:
-                value = re.sub('@PREFIX@', "", field[1])
+                value = re.sub('@PREFIX@', "", field[1]).rstrip()
                 setattr(p, field[0], value)
             else:
                 error("param: unknown parameter metadata field '%s'" % field[0])
@@ -138,10 +165,16 @@ for vehicle in vehicles:
 
 debug("Found %u documented libraries" % len(libraries))
 
+if args.emit_sitl:
+    libraries = filter(lambda x : x.name == 'SIM_', libraries)
+else:
+    libraries = filter(lambda x : x.name != 'SIM_', libraries)
+
+libraries = list(libraries)
+
 alllibs = libraries[:]
 
 vehicle = vehicles[0]
-
 
 def process_library(vehicle, library, pathprefix=None):
     '''process one library'''
@@ -165,17 +198,26 @@ def process_library(vehicle, library, pathprefix=None):
             p_text = f.read()
             f.close()
         else:
-            error("Path %s not found for library %s" % (path, library.name))
+            error("Path %s not found for library %s (fname=%s)" % (path, library.name, libraryfname))
             continue
 
         param_matches = prog_param.findall(p_text)
         debug("Found %u documented parameters" % len(param_matches))
         for param_match in param_matches:
-            p = Parameter(library.name+param_match[0], current_file)
+            (only_vehicles, param_name, field_text) = (param_match[0],
+                                                       param_match[1],
+                                                       param_match[2])
+            if len(only_vehicles):
+                only_vehicles_list = [x.strip() for x in only_vehicles.split(",")]
+                for only_vehicle in only_vehicles_list:
+                    if only_vehicle not in valid_truenames:
+                        raise ValueError("Invalid only_vehicle %s" % only_vehicle)
+                if vehicle.truename not in only_vehicles_list:
+                    continue
+            p = Parameter(library.name+param_name, current_file)
             debug(p.name + ' ')
             global current_param
             current_param = p.name
-            field_text = param_match[1]
             fields = prog_param_fields.findall(field_text)
             non_vehicle_specific_values_seen = False
             for field in fields:
@@ -200,7 +242,7 @@ def process_library(vehicle, library, pathprefix=None):
                 debug("field[0]=%s vehicle=%s truename=%s field[1]=%s only_for_vehicles=%s\n" %
                       (field[0], vehicle.name, vehicle.truename, field[1], str(only_for_vehicles)))
                 value = re.sub('@PREFIX@', library.name, field[2])
-                if field[0] == "Values":
+                if field[0] in ['Values', 'Bitmask']:
                     if vehicle.truename in only_for_vehicles:
                         this_vehicle_values_seen = True
                         this_vehicle_value = value
@@ -212,22 +254,33 @@ def process_library(vehicle, library, pathprefix=None):
                     setattr(p, field[0], value)
                 else:
                     error("tagged param<: unknown parameter metadata field '%s'" % field[0])
-            if ((non_vehicle_specific_values_seen or not other_vehicle_values_seen) or this_vehicle_values_seen):
-                if this_vehicle_values_seen and field[0] == 'Values':
-                    setattr(p, field[0], this_vehicle_value)
-#                debug("Appending (non_vehicle_specific_values_seen=%u "
-#                      "other_vehicle_values_seen=%u this_vehicle_values_seen=%u)" %
-#                      (non_vehicle_specific_values_seen, other_vehicle_values_seen, this_vehicle_values_seen))
+                if ((non_vehicle_specific_values_seen or not other_vehicle_values_seen) or this_vehicle_values_seen):
+                    if this_vehicle_values_seen and field[0] in ['Values', 'Bitmask']:
+                        setattr(p, field[0], this_vehicle_value)
+    #                debug("Appending (non_vehicle_specific_values_seen=%u "
+    #                      "other_vehicle_values_seen=%u this_vehicle_values_seen=%u)" %
+    #                      (non_vehicle_specific_values_seen, other_vehicle_values_seen, this_vehicle_values_seen))
             p.path = path # Add path. Later deleted - only used for duplicates
             library.params.append(p)
 
         group_matches = prog_groups.findall(p_text)
         debug("Found %u groups" % len(group_matches))
         debug(group_matches)
+        done_groups = dict()
         for group_match in group_matches:
             group = group_match[0]
             debug("Group: %s" % group)
-            lib = Library(group)
+            do_append = True
+            if group in done_groups:
+                # this is to handle cases like the RangeFinder
+                # parameters, where the wasp stuff gets tack into the
+                # same RNGFND1_ group
+                lib = done_groups[group]
+                do_append = False
+            else:
+                lib = Library(group)
+                done_groups[group] = lib
+
             fields = prog_param_fields.findall(group_match[1])
             for field in fields:
                 if field[0] in known_group_fields:
@@ -235,10 +288,12 @@ def process_library(vehicle, library, pathprefix=None):
                 else:
                     error("unknown parameter metadata field '%s'" % field[0])
             if not any(lib.name == parsed_l.name for parsed_l in libraries):
-                lib.name = library.name + lib.name
+                if do_append:
+                    lib.name = library.name + lib.name
                 debug("Group name: %s" % lib.name)
                 process_library(vehicle, lib, os.path.dirname(libraryfname))
-                alllibs.append(lib)
+                if do_append:
+                    alllibs.append(lib)
 
     current_file = None
 
@@ -266,6 +321,21 @@ def is_number(numberString):
         return False
 
 
+def clean_param(param):
+    if (hasattr(param, "Values")):
+        valueList = param.Values.split(",")
+        new_valueList = []
+        for i in valueList:
+            (start, sep, end) = i.partition(":")
+            if sep != ":":
+                raise ValueError("Expected a colon seperator in (%s)" % (i,))
+            if len(end) == 0:
+                raise ValueError("Expected a colon-separated string, got (%s)" % i)
+            end = end.strip()
+            start = start.strip()
+            new_valueList.append(":".join([start, end]))
+        param.Values = ",".join(new_valueList)
+
 def validate(param):
     """
     Validates the parameter meta data.
@@ -278,7 +348,8 @@ def validate(param):
     if (hasattr(param, "Range")):
         rangeValues = param.__dict__["Range"].split(" ")
         if (len(rangeValues) != 2):
-            error("Invalid Range values for %s" % (param.name))
+            error("Invalid Range values for %s (%s)" %
+                  (param.name, param.__dict__["Range"]))
             return
         min_value = rangeValues[0]
         max_value = rangeValues[1]
@@ -288,11 +359,31 @@ def validate(param):
         if not is_number(max_value):
             error("Max value not number: %s %s" % (param.name, max_value))
             return
+    # Check for duplicate in @value field 
+    if (hasattr(param, "Values")):
+        valueList = param.__dict__["Values"].split(",")
+        values = []
+        for i in valueList:
+            i = i.replace(" ","")
+            values.append(i.partition(":")[0])
+        if (len(values) != len(set(values))):
+            error("Duplicate values found")
     # Validate units
     if (hasattr(param, "Units")):
         if (param.__dict__["Units"] != "") and (param.__dict__["Units"] not in known_units):
             error("unknown units field '%s'" % param.__dict__["Units"])
+    # Validate User
+    if (hasattr(param, "User")):
+        if param.User.strip() not in ["Standard", "Advanced"]:
+            error("unknown user (%s)" % param.User.strip())
 
+    if (hasattr(param, "Description")):
+        if not param.Description or not param.Description.strip():
+            error("Empty Description (%s)" % param)
+
+for vehicle in vehicles:
+    for param in vehicle.params:
+        clean_param(param)
 
 for vehicle in vehicles:
     for param in vehicle.params:
@@ -317,13 +408,52 @@ for library in libraries:
 
 for library in libraries:
     for param in library.params:
+        clean_param(param)
+
+for library in libraries:
+    for param in library.params:
         validate(param)
 
+if not args.emit_params:
+    sys.exit(error_count)
 
-def do_emit(emit):
-    emit.set_annotate_with_vehicle(len(vehicles) > 1)
-    for vehicle in vehicles:
-        emit.emit(vehicle)
+all_emitters = {
+    'json': JSONEmit,
+    'xml': XmlEmit,
+    'html': HtmlEmit,
+    'rst': RSTEmit,
+    'md': MDEmit,
+    'xml_mp': XmlEmitMP,
+}
+
+try:
+    from ednemit import EDNEmit
+    all_emitters['edn'] = EDNEmit
+except ImportError:
+    # if the user wanted edn only then don't hide any errors
+    if args.output_format == 'edn':
+        raise
+
+    if args.verbose:
+        print("Unable to emit EDN, install edn_format and pytz if edn is desired")
+
+# filter to just the ones we want to emit:
+emitters_to_use = []
+for emitter_name in all_emitters.keys():
+    if args.output_format == 'all' or args.output_format == emitter_name:
+        emitters_to_use.append(emitter_name)
+
+if args.emit_sitl:
+    # only generate rst for SITL for now:
+    emitters_to_use = ['rst']
+
+# actually invoke each emiiter:
+for emitter_name in emitters_to_use:
+    emit = all_emitters[emitter_name](sitl=args.emit_sitl)
+
+    if not args.emit_sitl:
+        for vehicle in vehicles:
+            emit.emit(vehicle)
 
     emit.start_libraries()
 
@@ -332,29 +462,5 @@ def do_emit(emit):
             emit.emit(library)
 
     emit.close()
-
-
-if args.emit_params:
-    if args.output_format == 'all' or args.output_format == 'xml':
-        do_emit(XmlEmit())
-    if args.output_format == 'all' or args.output_format == 'wiki':
-        do_emit(WikiEmit())
-    if args.output_format == 'all' or args.output_format == 'html':
-        do_emit(HtmlEmit())
-    if args.output_format == 'all' or args.output_format == 'rst':
-        do_emit(RSTEmit())
-    if args.output_format == 'all' or args.output_format == 'md':
-        do_emit(MDEmit())
-    if args.output_format == 'all' or args.output_format == 'edn':
-        try:
-            from ednemit import EDNEmit
-            do_emit(EDNEmit())
-        except ImportError:
-            # if the user wanted edn only then don't hide any errors
-            if args.output_format == 'edn':
-                raise
-
-            if args.verbose:
-                print("Unable to emit EDN, install edn_format and pytz if edn is desired")
 
 sys.exit(error_count)

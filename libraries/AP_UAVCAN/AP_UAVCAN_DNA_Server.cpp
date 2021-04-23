@@ -18,7 +18,7 @@
 
 #include <AP_HAL/AP_HAL.h>
 
-#if HAL_WITH_UAVCAN
+#if HAL_MAX_CAN_PROTOCOL_DRIVERS
 
 #include "AP_UAVCAN_DNA_Server.h"
 #include "AP_UAVCAN.h"
@@ -27,14 +27,15 @@
 #include <AP_Math/AP_Math.h>
 #include <uavcan/protocol/dynamic_node_id/Allocation.hpp>
 #include <GCS_MAVLink/GCS.h>
-
+#include <AP_Logger/AP_Logger.h>
+#include "AP_UAVCAN_Clock.h"
 extern const AP_HAL::HAL& hal;
 
 #define NODEDATA_MAGIC 0xAC01
 #define NODEDATA_MAGIC_LEN 2
 #define MAX_NODE_ID    125
 
-#define debug_uavcan(fmt, args...) do { hal.console->printf(fmt, ##args); } while (0)
+#define debug_uavcan(level_debug, fmt, args...) do { AP::can().log_text(level_debug, "UAVCAN", fmt, ##args); } while (0)
 
 //Callback Object Definitions
 UC_REGISTRY_BINDER(AllocationCb, uavcan::protocol::dynamic_node_id::Allocation);
@@ -44,9 +45,9 @@ static void trampoline_handleNodeInfo(const uavcan::ServiceCallResult<uavcan::pr
 static void trampoline_handleAllocation(AP_UAVCAN* ap_uavcan, uint8_t node_id, const AllocationCb &cb);
 static void trampoline_handleNodeStatus(AP_UAVCAN* ap_uavcan, uint8_t node_id, const NodeStatusCb &cb);
 
-static uavcan::ServiceClient<uavcan::protocol::GetNodeInfo>* getNodeInfo_client[MAX_NUMBER_OF_CAN_DRIVERS];
+static uavcan::ServiceClient<uavcan::protocol::GetNodeInfo>* getNodeInfo_client[HAL_MAX_CAN_PROTOCOL_DRIVERS];
 
-static uavcan::Publisher<uavcan::protocol::dynamic_node_id::Allocation>* allocation_pub[MAX_NUMBER_OF_CAN_DRIVERS];
+static uavcan::Publisher<uavcan::protocol::dynamic_node_id::Allocation>* allocation_pub[HAL_MAX_CAN_PROTOCOL_DRIVERS];
 
 /* Subscribe to all the messages we are going to handle for
 Server registry and Node allocation. */
@@ -258,6 +259,8 @@ bool AP_UAVCAN_DNA_Server::init(AP_UAVCAN *ap_uavcan)
         return false;
     }
 
+    WITH_SEMAPHORE(sem);
+
     //Read the details from ap_uavcan
     uavcan::Node<0>* _node = ap_uavcan->get_node();
     uint8_t node_id = _node->getNodeID().get();
@@ -418,14 +421,22 @@ seen list, So that we can raise issue if there are duplicates
 on the bus. */
 void AP_UAVCAN_DNA_Server::verify_nodes(AP_UAVCAN *ap_uavcan)
 {
-    uint32_t now = AP_HAL::millis();
+    WITH_SEMAPHORE(sem);
+
+    uint32_t now = uavcan::SystemClock::instance().getMonotonic().toMSec();
     if ((now - last_verification_request) < 5000) {
         return;
     }
 
+    uint8_t log_count = AP::logger().get_log_start_count();
+    if (log_count != last_logging_count) {
+        last_logging_count = log_count;
+        logged.clearall();
+    }
+    
     //Check if we got acknowledgement from previous request
     //except for requests using our own node_id
-    for (uint8_t i = 0; i < MAX_NUMBER_OF_CAN_DRIVERS; i++) {
+    for (uint8_t i = 0; i < HAL_MAX_CAN_PROTOCOL_DRIVERS; i++) {
         if (curr_verifying_node == self_node_id[i]) {
             nodeInfo_resp_rcvd = true;
         }
@@ -438,7 +449,6 @@ void AP_UAVCAN_DNA_Server::verify_nodes(AP_UAVCAN *ap_uavcan)
         /* Only report if the node was verified, otherwise ignore
         as this could be just Bootloader to Application transition. */
         if (isNodeIDVerified(curr_verifying_node)) {
-            gcs().send_text(MAV_SEVERITY_ERROR, "UC Node %d Down!", curr_verifying_node);
             // remove verification flag for this node
             verified_mask.clear(curr_verifying_node);
         }
@@ -452,7 +462,7 @@ void AP_UAVCAN_DNA_Server::verify_nodes(AP_UAVCAN *ap_uavcan)
             break;
         }
     }
-    for (uint8_t i = 0; i < MAX_NUMBER_OF_CAN_DRIVERS; i++) {
+    for (uint8_t i = 0; i < HAL_MAX_CAN_PROTOCOL_DRIVERS; i++) {
         if (getNodeInfo_client[i] != nullptr && isNodeIDOccupied(curr_verifying_node)) {
             uavcan::protocol::GetNodeInfo::Request request;
             getNodeInfo_client[i]->call(curr_verifying_node, request);
@@ -469,9 +479,10 @@ void AP_UAVCAN_DNA_Server::handleNodeStatus(uint8_t node_id, const NodeStatusCb 
     if (node_id > MAX_NODE_ID) {
         return;
     }
+    WITH_SEMAPHORE(sem);
     if (!isNodeIDVerified(node_id)) {
         //immediately begin verification of the node_id
-        for (uint8_t i = 0; i < MAX_NUMBER_OF_CAN_DRIVERS; i++) {
+        for (uint8_t i = 0; i < HAL_MAX_CAN_PROTOCOL_DRIVERS; i++) {
             if (getNodeInfo_client[i] != nullptr) {
                 uavcan::protocol::GetNodeInfo::Request request;
                 getNodeInfo_client[i]->call(node_id, request);
@@ -498,11 +509,31 @@ Handle responses from GetNodeInfo Request. We verify the node info
 against our records. Marks Verification mask if already recorded,
 Or register if the node id is available and not recorded for the
 received Unique ID */
-void AP_UAVCAN_DNA_Server::handleNodeInfo(uint8_t node_id, uint8_t unique_id[], char name[])
+void AP_UAVCAN_DNA_Server::handleNodeInfo(uint8_t node_id, uint8_t unique_id[], char name[], uint8_t major, uint8_t minor, uint32_t vcs_commit)
 {
     if (node_id > MAX_NODE_ID) {
         return;
     }
+    WITH_SEMAPHORE(sem);
+
+    /*
+      if we haven't logged this node then log it now
+     */
+    if (!logged.get(node_id) && AP::logger().logging_started()) {
+        logged.set(node_id);
+        uint64_t uid[2];
+        memcpy(uid, unique_id, sizeof(uid));
+        AP::logger().Write("CAND", "TimeUS,NodeId,UID1,UID2,Name,Major,Minor,Version",
+                           "s#------", "F-------", "QBQQZBBI",
+                           AP_HAL::micros64(),
+                           node_id,
+                           uid[0], uid[1],
+                           name,
+                           major,
+                           minor,
+                           vcs_commit);
+    }
+
     if (isNodeIDOccupied(node_id)) {
         //if node_id already registered, just verify if Unique ID matches as well
         if (node_id == getNodeIDForUniqueID(unique_id, 16)) {
@@ -539,16 +570,23 @@ void AP_UAVCAN_DNA_Server::handleNodeInfo(uint8_t node_id, uint8_t unique_id[], 
 void trampoline_handleNodeInfo(const uavcan::ServiceCallResult<uavcan::protocol::GetNodeInfo>& resp)
 {
     uint8_t node_id, unique_id[16] = {0};
-    char name[15] = {0};
+    char name[50] = {0};
 
     node_id = resp.getResponse().getSrcNodeID().get();
 
     //copy the unique id from message to uint8_t array
-    uavcan::copy(resp.getResponse().hardware_version.unique_id.begin(),
-                 resp.getResponse().hardware_version.unique_id.end(),
+    auto &r = resp.getResponse();
+    uavcan::copy(r.hardware_version.unique_id.begin(),
+                 r.hardware_version.unique_id.end(),
                  unique_id);
-    snprintf(name, ARRAY_SIZE(name), "%s", resp.getResponse().name.c_str());
-    AP::uavcan_dna_server().handleNodeInfo(node_id, unique_id, name);
+    strncpy_noterm(name, r.name.c_str(), sizeof(name)-1);
+
+    auto &dna_server = AP::uavcan_dna_server();
+
+    dna_server.handleNodeInfo(node_id, unique_id, name,
+                              r.software_version.major,
+                              r.software_version.minor,
+                              r.software_version.vcs_commit);
 }
 
 /* Handle the allocation message from the devices supporting
@@ -559,11 +597,12 @@ void AP_UAVCAN_DNA_Server::handleAllocation(uint8_t driver_index, uint8_t node_i
         //init has not been called for this driver.
         return;
     }
+    WITH_SEMAPHORE(sem);
     if (!cb.msg->isAnonymousTransfer()) {
         //Ignore Allocation messages that are not DNA requests
         return;
     }
-    uint32_t now = AP_HAL::millis();
+    uint32_t now = uavcan::SystemClock::instance().getMonotonic().toMSec();
     if (driver_index == current_driver_index) {
         last_activity_ms = now;
     } else if ((now - last_activity_ms) > 500) {
@@ -579,14 +618,27 @@ void AP_UAVCAN_DNA_Server::handleAllocation(uint8_t driver_index, uint8_t node_i
         return;
     }
 
-    if (cb.msg->first_part_of_unique_id) {
-        rcvd_unique_id_offset = 0;
-        memset(rcvd_unique_id, 0, sizeof(rcvd_unique_id));
-    } else if (rcvd_unique_id_offset == 0) {
-        //we are only accepting first part
+    if (rcvd_unique_id_offset == 0 ||
+        (now - last_alloc_msg_ms) > 500) {
+        if (cb.msg->first_part_of_unique_id) {
+            rcvd_unique_id_offset = 0;
+            memset(rcvd_unique_id, 0, sizeof(rcvd_unique_id));
+        } else {
+            //we are only accepting first part
+            return;
+        }
+    } else if (cb.msg->first_part_of_unique_id) {
+        // we are only accepting follow up messages
         return;
     }
 
+    if (rcvd_unique_id_offset) {
+        debug_uavcan(AP_CANManager::LOG_DEBUG, "TIME: %ld  -- Accepting Followup part! %u\n", uavcan::SystemClock::instance().getMonotonic().toUSec()/1000, (now - last_alloc_msg_ms));
+    } else {
+        debug_uavcan(AP_CANManager::LOG_DEBUG, "TIME: %ld  -- Accepting First part! %u\n", uavcan::SystemClock::instance().getMonotonic().toUSec()/1000, (now - last_alloc_msg_ms));
+    }
+
+    last_alloc_msg_ms = now;
     if ((rcvd_unique_id_offset + cb.msg->unique_id.size()) > 16) {
         //This request is malformed, Reset!
         rcvd_unique_id_offset = 0;
@@ -603,6 +655,12 @@ void AP_UAVCAN_DNA_Server::handleAllocation(uint8_t driver_index, uint8_t node_i
     //send follow up message
     uavcan::protocol::dynamic_node_id::Allocation msg;
 
+    /* Respond with the message containing the received unique ID so far
+    or with node id if we successfully allocated one. */
+    for (uint8_t i = 0; i < rcvd_unique_id_offset; i++) {
+        msg.unique_id.push_back(rcvd_unique_id[i]);
+    }
+
     if (rcvd_unique_id_offset == 16) {
         //We have received the full Unique ID, time to do allocation
         uint8_t resp_node_id = getNodeIDForUniqueID((const uint8_t*)rcvd_unique_id, 16);
@@ -613,18 +671,16 @@ void AP_UAVCAN_DNA_Server::handleAllocation(uint8_t driver_index, uint8_t node_i
                     msg.node_id = resp_node_id;
                 }
             } else {
-                gcs().send_text(MAV_SEVERITY_ERROR, "UC Node Alloc Failed!");
+                GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "UC Node Alloc Failed!");
             }
         } else {
             msg.node_id = resp_node_id;
         }
+        //reset states as well        
+        rcvd_unique_id_offset = 0;
+        memset(rcvd_unique_id, 0, sizeof(rcvd_unique_id));
     }
 
-    /* Respond with the message containing the received unique ID so far
-    or with node id if we successfully allocated one. */
-    for (uint8_t i = 0; i < rcvd_unique_id_offset; i++) {
-        msg.unique_id.push_back(rcvd_unique_id[i]);
-    }
     allocation_pub[driver_index]->broadcast(msg);
 }
 
@@ -640,25 +696,23 @@ void trampoline_handleAllocation(AP_UAVCAN* ap_uavcan, uint8_t node_id, const Al
 //report the server state, along with failure message if any
 bool AP_UAVCAN_DNA_Server::prearm_check(char* fail_msg, uint8_t fail_msg_len) const
 {
-    if (server_state == HEALTHY) {
-        return true;
-    }
     switch (server_state) {
+    case HEALTHY:
+        return true;
     case STORAGE_FAILURE: {
-        snprintf(fail_msg, fail_msg_len, "UC: Failed to access storage!");
+        snprintf(fail_msg, fail_msg_len, "Failed to access storage!");
         return false;
     }
     case DUPLICATE_NODES: {
-        snprintf(fail_msg, fail_msg_len, "UC: Duplicate Node %s../%d!", fault_node_name, fault_node_id);
+        snprintf(fail_msg, fail_msg_len, "Duplicate Node %s../%d!", fault_node_name, fault_node_id);
         return false;
     }
     case FAILED_TO_ADD_NODE: {
-        snprintf(fail_msg, fail_msg_len, "UC: Failed to add Node %d!", fault_node_id);
+        snprintf(fail_msg, fail_msg_len, "Failed to add Node %d!", fault_node_id);
         return false;
     }
-    default:
-        break;
     }
+    // should never get; compiler should enforce all server_states are covered
     return false;
 }
 
@@ -666,8 +720,9 @@ namespace AP
 {
 AP_UAVCAN_DNA_Server& uavcan_dna_server()
 {
-    static AP_UAVCAN_DNA_Server _server(StorageAccess(StorageManager::StorageCANDNA));
+    // clang gets confused with only one pair of braces so we add one more pair
+    static AP_UAVCAN_DNA_Server _server((StorageAccess(StorageManager::StorageCANDNA)));
     return _server;
 }
 }
-#endif //HAL_WITH_UAVCAN
+#endif //HAL_NUM_CAN_IFACES

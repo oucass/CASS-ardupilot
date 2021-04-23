@@ -11,28 +11,17 @@ APJ_BOARD_ID 145
 # crystal frequency, setup to use external oscillator
 OSCILLATOR_HZ 8000000
 
-define STM32_LSECLK   32768U
-define STM32_LSEDRV   (3U << 3U)
-
-define STM32_PLLSRC     STM32_PLLSRC_HSE
-define STM32_PLLM_VALUE 8
-define STM32_PLLN_VALUE 432
-define STM32_PLLP_VALUE 2
-define STM32_PLLQ_VALUE 9
-
 FLASH_SIZE_KB 1024
 
 # leave 2 sectors free
 FLASH_RESERVE_START_KB 96
 
-# board voltage
-STM32_VDD 330U
 
 # only one I2C bus
 I2C_ORDER I2C1
 
 # order of UARTs (and USB), USART3 should be in second place to map order with the board's silk screen
-UART_ORDER OTG1 USART3 USART1 USART2 UART4 EMPTY USART6 UART7
+SERIAL_ORDER OTG1 USART1 USART2 USART3 UART4 EMPTY USART6 UART7
 
 # buzzer
 PD15 TIM4_CH4 TIM4 GPIO(77) ALARM
@@ -83,9 +72,12 @@ PC5 RSSI_ADC ADC1
 
 PA2 LED0 OUTPUT LOW
 
+# In order to accommodate bi-directional dshot certain devices cannot be DMA enabled
+# NODMA indicates these devices, if you remove it they will still not be resolved for DMA
+
 # USART1
-PA10 USART1_RX USART1
-PA9  USART1_TX USART1
+PA10 USART1_RX USART1 NODMA
+PA9  USART1_TX USART1 NODMA
 
 # USART2
 PD5 USART2_TX USART2
@@ -99,27 +91,33 @@ PB10 USART3_TX USART3
 PA0 UART4_TX UART4 NODMA
 PA1 UART4_RX UART4 NODMA
 
-# USART6, RX only for RCIN
-PC7 TIM8_CH2 TIM8 RCININT FLOAT LOW
-PC6 USART6_TX USART6 NODMA LOW
+# RC input defaults to UART to allow for bi-dir dshot
+PC6 USART6_TX USART6
+PC7 USART6_RX USART6
+define HAL_SERIAL6_PROTOCOL SerialProtocol_RCIN
+define HAL_SERIAL6_BAUD 115
 
 # UART7, RX only for ESC Telemetry
-PE7 UART7_RX UART7
+# No DMA because SPI2 requires the DMA slot
+PE7 UART7_RX UART7 NODMA
 PE8 UART7_TX UART7 NODMA LOW
 
-# Motors
-PB1  TIM1_CH3N TIM1 PWM(1) GPIO(50)
-PE9  TIM1_CH1 TIM1 PWM(2) GPIO(51)
-PE11 TIM1_CH2 TIM1 PWM(3) GPIO(52)
-PB0  TIM3_CH3 TIM3 PWM(4) GPIO(53)
-PC9  TIM3_CH4 TIM3 PWM(5) GPIO(54)
-PA3  TIM5_CH4 TIM5 PWM(6) GPIO(55)
+# Motors, bi-directional dshot capable
+PB1  TIM3_CH4 TIM3 PWM(1) GPIO(50)          # M1
+PE9  TIM1_CH1 TIM1 PWM(2) GPIO(51)          # M2 CH1 and CH2 can share ICU Channel for BIDIR
+PE11 TIM1_CH2 TIM1 PWM(3) GPIO(52)  BIDIR   # M4
+PB0  TIM3_CH3 TIM3 PWM(4) GPIO(53)  BIDIR   # M3
+# These are not DMA enabled so not dshot capable
+# To get dshot (but not bi-dir dshot) remove the NODMA and add NODMA to USART6
+PC9  TIM8_CH4 TIM8 PWM(5) GPIO(54)  NODMA   # M5
+PA3  TIM5_CH4 TIM5 PWM(6) GPIO(55)          # M6
 
 # extra PWM outs
 #PD12  TIM4_CH1 TIM4 PWM(7) GPIO(56) # led pin
 #PD15 TIM4_CH4 TIM4 PWM(8) GPIO(57) # buzzer pin (need to comment out buzzer)
 
-DMA_PRIORITY S*
+DMA_PRIORITY ADC* USART6* TIM1* TIM3* SPI4* SPI1*
+DMA_NOSHARE SPI4_RX
 
 define HAL_STORAGE_SIZE 16384
 define STORAGE_FLASH_PAGE 1
@@ -147,10 +145,27 @@ IMU Invensense SPI:mpu6000 ROTATION_YAW_180
 BARO BMP280 I2C:0:0x76
 
 # setup for OSD
-define OSD_ENABLED ENABLED
+define OSD_ENABLED 1
 define HAL_OSD_TYPE_DEFAULT 1
-ROMFS_WILDCARD libraries/AP_OSD/fonts/font*.bin
+ROMFS_WILDCARD libraries/AP_OSD/fonts/font0.bin
 
 define BOARD_PWM_COUNT_DEFAULT 6
 define STM32_PWM_USE_ADVANCED TRUE
 
+# disable SMBUS and fuel battery monitors to save flash
+define HAL_BATTMON_SMBUS_ENABLE 0
+define HAL_BATTMON_FUEL_ENABLE 0
+
+# disable parachute and sprayer to save flash
+define HAL_PARACHUTE_ENABLED 0
+define HAL_SPRAYER_ENABLED 0
+
+# reduce max size of embedded params for apj_tool.py
+define AP_PARAM_MAX_EMBEDDED_PARAM 1024
+
+define HAL_MOUNT_ENABLED 0
+
+# save some flash
+define GENERATOR_ENABLED 0
+define AC_OAPATHPLANNER_ENABLED 0
+define PRECISION_LANDING 0

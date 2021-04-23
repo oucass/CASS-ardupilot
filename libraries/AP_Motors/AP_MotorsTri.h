@@ -54,6 +54,8 @@ public:
     // using copter motors for forward flight
     float               get_roll_factor(uint8_t i) override;
 
+    const char* get_frame_string() const override { return "TRI"; }
+
 protected:
     // output - sends commands to the motors
     void                output_armed_stabilizing() override;
@@ -63,7 +65,6 @@ protected:
     
     // parameters
 
-    SRV_Channel     *_yaw_servo; // yaw output channel
     float           _pivot_angle;                       // Angle of yaw pivot
     float           _thrust_right;
     float           _thrust_rear;

@@ -18,6 +18,7 @@
 
 #include <AP_HAL/HAL.h>
 #include <AP_OSD/AP_OSD.h>
+#include <AP_Filesystem/AP_Filesystem.h>
 
 
 class AP_OSD_Backend
@@ -42,6 +43,9 @@ public:
     //update screen
     virtual void flush() = 0;
 
+    // return a correction factor used to display angles correctly
+    virtual float get_aspect_ratio_correction() const {return 1;}
+
     //clear screen
     //should match hw blink
     virtual void clear()
@@ -64,12 +68,21 @@ protected:
     }
 
     //check option
-    bool check_option(uint32_t option)
+    bool check_option(uint32_t option) const
     {
         return (_osd.options & option) != 0;
     }
 
+    // load a font from sdcard or ROMFS
+    FileData *load_font_data(uint8_t font_num);
+
     int8_t blink_phase;
+
+    enum vid_format {
+        FORMAT_UNKNOWN = 0,
+        FORMAT_NTSC = 1,
+        FORMAT_PAL = 2,
+    } _format;
 };
 
 

@@ -17,6 +17,7 @@
 #pragma once
 
 #include <AP_HAL/AP_HAL.h>
+#include <SITL/SITL.h>
 
 #ifdef WITH_SITL_RGBLED
 
@@ -32,9 +33,9 @@ class SITL_SFML_LED: public RGBLed
 {
 public:
     SITL_SFML_LED();
+    bool init(void) override;
 
 protected:
-    bool hw_init(void) override;
     bool hw_set_rgb(uint8_t r, uint8_t g, uint8_t b) override;
 
 private:
@@ -61,6 +62,12 @@ private:
     uint8_t red;
     uint8_t green;
     uint8_t blue;
+
+    static const uint8_t MAX_LEDS = 64;
+
+    // LED layout control
+    bool layout_size(SITL::LedLayout layout, uint16_t &xsize, uint16_t &ysize);
+    bool layout_pos(SITL::LedLayout layout, uint8_t chan, uint8_t led, uint16_t &xpos, uint16_t &ypos);
 };
 
 #endif

@@ -26,8 +26,8 @@
 #define HAL_GPIO_LED_OFF          1
 #endif
 
-#ifndef HAL_WITH_UAVCAN
-#define HAL_WITH_UAVCAN 0
+#ifndef HAL_NUM_CAN_IFACES
+#define HAL_NUM_CAN_IFACES 0
 #endif
 
 #ifndef HAL_HAVE_BOARD_VOLTAGE
@@ -59,7 +59,9 @@
 // allow for static semaphores
 #include <AP_HAL_ChibiOS/Semaphores.h>
 #define HAL_Semaphore ChibiOS::Semaphore
-#define HAL_Semaphore_Recursive ChibiOS::Semaphore_Recursive
+
+#include <AP_HAL/EventHandle.h>
+#define HAL_EventHandle AP_HAL::EventHandle
 
 /* string names for well known SPI devices */
 #define HAL_BARO_MS5611_NAME "ms5611"
@@ -102,7 +104,9 @@
 #endif
 
 // we support RC serial for BLHeli pass-thru
-#define HAL_SUPPORT_RCOUT_SERIAL 1
+#ifndef HAL_SUPPORT_RCOUT_SERIAL
+#define HAL_SUPPORT_RCOUT_SERIAL !defined(HAL_BUILD_AP_PERIPH)
+#endif
 
 // by default assume first I2C bus is internal
 #ifndef HAL_I2C_INTERNAL_MASK

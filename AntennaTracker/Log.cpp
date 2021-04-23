@@ -10,13 +10,13 @@ void Tracker::Log_Write_Attitude()
     Vector3f targets;
     targets.y = nav_status.pitch * 100.0f;
     targets.z = wrap_360_cd(nav_status.bearing * 100.0f);
-    logger.Write_Attitude(targets);
+    ahrs.Write_Attitude(targets);
     AP::ahrs_navekf().Log_Write();
-    logger.Write_AHRS2();
+    ahrs.Write_AHRS2();
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     sitl.Log_Write_SIMSTATE();
 #endif
-    logger.Write_POS();
+    ahrs.Write_POS();
 }
 
 struct PACKED log_Vehicle_Baro {
@@ -64,6 +64,22 @@ void Tracker::Log_Write_Vehicle_Pos(int32_t lat, int32_t lng, int32_t alt, const
     };
     logger.WriteBlock(&pkt, sizeof(pkt));
 }
+
+// @LoggerMessage: VBAR
+// @Description: Information received from tracked vehicle; barometer data
+// @Field: TimeUS: Time since system startup
+// @Field: Press: vehicle barometric pressure
+// @Field: AltDiff: altitude difference based on difference on barometric pressure
+
+// @LoggerMessage: VPOS
+// @Description: Information received from tracked vehicle; barometer position data
+// @Field: TimeUS: Time since system startup
+// @Field: Lat: tracked vehicle latitude
+// @Field: Lng: tracked vehicle longitude
+// @Field: Alt: tracked vehicle altitude
+// @Field: VelX: tracked vehicle velocity, latitude component
+// @Field: VelY: tracked vehicle velocity, longitude component
+// @Field: VelZ: tracked vehicle velocity, vertical component, down
 
 // type and unit information can be found in
 // libraries/AP_Logger/Logstructure.h; search for "log_Units" for

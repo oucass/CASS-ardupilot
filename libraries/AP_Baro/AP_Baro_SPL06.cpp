@@ -103,9 +103,20 @@ bool AP_Baro_SPL06::_init()
     _dev->set_speed(AP_HAL::Device::SPEED_HIGH);
 
     uint8_t whoami;
-    if (!_dev->read_registers(SPL06_REG_CHIP_ID, &whoami, 1)  ||
-        whoami != SPL06_CHIP_ID) {
-        // not a SPL06
+
+// Sometimes SPL06 has init problems, that's due to failure of reading using SPI for the first time. The SPL06 is a dual
+// protocol sensor(I2C and SPI), sometimes it takes one SPI operation to convert it to SPI mode after it starts up.
+    bool is_SPL06 = false;
+
+    for (uint8_t i=0; i<5; i++) {
+        if (_dev->read_registers(SPL06_REG_CHIP_ID, &whoami, 1)  &&
+            whoami == SPL06_CHIP_ID) {
+            is_SPL06=true;
+            break;
+        }
+    }
+    
+    if(!is_SPL06) {
         return false;
     }
 
@@ -140,6 +151,9 @@ bool AP_Baro_SPL06::_init()
 
     _instance = _frontend.register_sensor();
 
+    _dev->set_device_type(DEVTYPE_BARO_SPL06);
+    set_bus_id(_instance, _dev->get_bus_id());
+    
     // request 50Hz update
     _timer_counter = -1;
     _dev->register_periodic_callback(20 * AP_USEC_PER_MSEC, FUNCTOR_BIND_MEMBER(&AP_Baro_SPL06::_timer, void));

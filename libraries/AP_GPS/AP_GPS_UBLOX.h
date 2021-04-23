@@ -37,7 +37,13 @@
  * modules are configured with all ubx binary messages off, which
  * would mean we would never detect it.
  */
-#define UBLOX_SET_BINARY "\265\142\006\001\003\000\001\006\001\022\117$PUBX,41,1,0023,0001,115200,0*1C\r\n"
+#define UBLOX_SET_BINARY_115200 "\265\142\006\001\003\000\001\006\001\022\117$PUBX,41,1,0023,0001,115200,0*1C\r\n"
+
+// a variant with 230400 baudrate
+#define UBLOX_SET_BINARY_230400 "\265\142\006\001\003\000\001\006\001\022\117$PUBX,41,1,0023,0001,230400,0*1E\r\n"
+
+// a variant with 460800 baudrate
+#define UBLOX_SET_BINARY_460800 "\265\142\006\001\003\000\001\006\001\022\117$PUBX,41,1,0023,0001,460800,0*11\r\n"
 
 #define UBLOX_RXM_RAW_LOGGING 1
 #define UBLOX_MAX_RXM_RAW_SATS 22
@@ -45,7 +51,6 @@
 #define UBLOX_GNSS_SETTINGS 1
 
 #define UBLOX_MAX_GNSS_CONFIG_BLOCKS 7
-#define UBX_MSG_TYPES 2
 
 #define UBX_TIMEGPS_VALID_WEEK_MASK 0x2
 
@@ -78,7 +83,8 @@
 #define CONFIG_TP5           (1<<14)
 #define CONFIG_RATE_TIMEGPS  (1<<15)
 #define CONFIG_TMODE_MODE    (1<<16)
-#define CONFIG_LAST          (1<<17) // this must always be the last bit
+#define CONFIG_RTK_MOVBASE   (1<<17)
+#define CONFIG_LAST          (1<<18) // this must always be the last bit
 
 #define CONFIG_REQUIRED_INITIAL (CONFIG_RATE_NAV | CONFIG_RATE_POSLLH | CONFIG_RATE_STATUS | CONFIG_RATE_VELNED)
 
@@ -96,10 +102,13 @@
 #define SAVE_CFG_ANT    (1<<10)
 #define SAVE_CFG_ALL    (SAVE_CFG_IO|SAVE_CFG_MSG|SAVE_CFG_INF|SAVE_CFG_NAV|SAVE_CFG_RXM|SAVE_CFG_RINV|SAVE_CFG_ANT)
 
+class RTCM3_Parser;
+
 class AP_GPS_UBLOX : public AP_GPS_Backend
 {
 public:
-	AP_GPS_UBLOX(AP_GPS &_gps, AP_GPS::GPS_State &_state, AP_HAL::UARTDriver *_port);
+    AP_GPS_UBLOX(AP_GPS &_gps, AP_GPS::GPS_State &_state, AP_HAL::UARTDriver *_port, AP_GPS::GPS_Role role);
+    ~AP_GPS_UBLOX() override;
 
     // Methods
     bool read() override;
@@ -108,7 +117,7 @@ public:
 
     static bool _detect(struct UBLOX_detect_state &state, uint8_t data);
 
-    bool is_configured(void) override {
+    bool is_configured(void) const override {
 #if CONFIG_HAL_BOARD != HAL_BOARD_SITL
         if (!gps._auto_config) {
             return true;
@@ -128,6 +137,13 @@ public:
 
     const char *name() const override { return "u-blox"; }
 
+    // support for retrieving RTCMv3 data from a moving baseline base
+    bool get_RTCMV3(const uint8_t *&bytes, uint16_t &len) override;
+    void clear_RTCMV3(void) override;
+
+    // ublox specific healthy checks
+    bool is_healthy(void) const override;
+    
 private:
     // u-blox UBX protocol essentials
     struct PACKED ubx_header {
@@ -215,6 +231,43 @@ private:
     // F9 config keys
     enum class ConfigKey : uint32_t {
         TMODE_MODE = 0x20030001,
+        CFG_RATE_MEAS                   = 0x30210001,
+
+        CFG_UART1_BAUDRATE              = 0x40520001,
+        CFG_UART1_ENABLED               = 0x10520005,
+        CFG_UART1INPROT_UBX             = 0x10730001,
+        CFG_UART1INPROT_NMEA            = 0x10730002,
+        CFG_UART1INPROT_RTCM3X          = 0x10730004,
+        CFG_UART1OUTPROT_UBX            = 0x10740001,
+        CFG_UART1OUTPROT_NMEA           = 0x10740002,
+        CFG_UART1OUTPROT_RTCM3X         = 0x10740004,
+
+        CFG_UART2_BAUDRATE              = 0x40530001,
+        CFG_UART2_ENABLED               = 0x10530005,
+        CFG_UART2INPROT_UBX             = 0x10750001,
+        CFG_UART2INPROT_NMEA            = 0x10750002,
+        CFG_UART2INPROT_RTCM3X          = 0x10750004,
+        CFG_UART2OUTPROT_UBX            = 0x10760001,
+        CFG_UART2OUTPROT_NMEA           = 0x10760002,
+        CFG_UART2OUTPROT_RTCM3X         = 0x10760004,
+
+        MSGOUT_RTCM_3X_TYPE4072_0_UART1 = 0x209102ff,
+        MSGOUT_RTCM_3X_TYPE4072_1_UART1 = 0x20910382,
+        MSGOUT_RTCM_3X_TYPE1077_UART1   = 0x209102cd,
+        MSGOUT_RTCM_3X_TYPE1087_UART1   = 0x209102d2,
+        MSGOUT_RTCM_3X_TYPE1097_UART1   = 0x20910319,
+        MSGOUT_RTCM_3X_TYPE1127_UART1   = 0x209102d7,
+        MSGOUT_RTCM_3X_TYPE1230_UART1   = 0x20910304,
+        MSGOUT_UBX_NAV_RELPOSNED_UART1  = 0x2091008e,
+
+        MSGOUT_RTCM_3X_TYPE4072_0_UART2 = 0x20910300,
+        MSGOUT_RTCM_3X_TYPE4072_1_UART2 = 0x20910383,
+        MSGOUT_RTCM_3X_TYPE1077_UART2   = 0x209102ce,
+        MSGOUT_RTCM_3X_TYPE1087_UART2   = 0x209102d3,
+        MSGOUT_RTCM_3X_TYPE1097_UART2   = 0x2091031a,
+        MSGOUT_RTCM_3X_TYPE1127_UART2   = 0x209102d8,
+        MSGOUT_RTCM_3X_TYPE1230_UART2   = 0x20910305,
+        MSGOUT_UBX_NAV_RELPOSNED_UART2  = 0x2091008f,
     };
     struct PACKED ubx_cfg_valset {
         uint8_t version;
@@ -295,9 +348,11 @@ private:
         uint32_t s_acc; 
         uint32_t head_acc; 
         uint16_t p_dop; 
-        uint8_t reserved1[6]; 
-        uint32_t headVeh;
-        uint8_t reserved2[4]; 
+        uint8_t flags3;
+        uint8_t reserved1[5];
+        int32_t headVeh;
+        int16_t magDec;
+        uint16_t magAcc;
     };
     struct PACKED ubx_nav_relposned {
         uint8_t version;
@@ -500,10 +555,12 @@ private:
         diffSoln           = 1U << 1,
         relPosValid        = 1U << 2,
         carrSolnFloat      = 1U << 3,
+
         carrSolnFixed      = 1U << 4,
         isMoving           = 1U << 5,
         refPosMiss         = 1U << 6,
         refObsMiss         = 1U << 7,
+
         relPosHeadingValid = 1U << 8,
         relPosNormalized   = 1U << 9
     };
@@ -570,7 +627,8 @@ private:
         UBLOX_6,
         UBLOX_7,
         UBLOX_M8,
-        UBLOX_F9 = 0x80, // comes from MON_VER hwVersion string
+        UBLOX_F9 = 0x80, // comes from MON_VER hwVersion/swVersion strings
+        UBLOX_M9 = 0x81, // comes from MON_VER hwVersion/swVersion strings
         UBLOX_UNKNOWN_HARDWARE_GENERATION = 0xff // not in the ublox spec used for
                                                  // flagging state in the driver
     };
@@ -596,6 +654,7 @@ private:
         STEP_RAW,
         STEP_RAWX,
         STEP_VERSION,
+        STEP_RTK_MOVBASE, // setup moving baseline
         STEP_LAST
     };
 
@@ -624,7 +683,12 @@ private:
     struct ubx_mon_ver _version;
     uint32_t        _unconfigured_messages;
     uint8_t         _hardware_generation;
+    uint32_t        _last_pvt_itow;
+    uint32_t        _last_relposned_itow;
+    uint32_t        _last_relposned_ms;
 
+    // the role set from GPS_TYPE
+    AP_GPS::GPS_Role role;
 
     // do we have new position information?
     bool            _new_position:1;
@@ -646,7 +710,7 @@ private:
     bool havePvtMsg;
 
     bool        _configure_message_rate(uint8_t msg_class, uint8_t msg_id, uint8_t rate);
-    bool        _configure_valset(ConfigKey key, const uint8_t len, const uint8_t *value);
+    bool        _configure_valset(ConfigKey key, const void *value);
     bool        _configure_valget(ConfigKey key);
     void        _configure_rate(void);
     void        _configure_sbas(bool enable);
@@ -667,8 +731,52 @@ private:
     void log_rxm_raw(const struct ubx_rxm_raw &raw);
     void log_rxm_rawx(const struct ubx_rxm_rawx &raw);
 
-    // Calculates the correct log message ID based on what GPS instance is being logged
-    uint8_t _ubx_msg_log_index(uint8_t ubx_msg) {
-        return (uint8_t)(ubx_msg + (state.instance * UBX_MSG_TYPES));
+#if GPS_MOVING_BASELINE
+    // see if we should use uart2 for moving baseline config
+    bool mb_use_uart2(void) const {
+        return (driver_options() & DriverOptions::UBX_MBUseUart2)?true:false;
     }
+#endif
+
+    // structure for list of config key/value pairs for
+    // specific configurations
+    struct PACKED config_list {
+        ConfigKey key;
+        // support up to 4 byte values, assumes little-endian
+        uint32_t value;
+    };
+
+    // return size of a config key payload
+    uint8_t config_key_size(ConfigKey key) const;
+
+    // configure a set of config key/value pairs. The unconfig_bit corresponds to
+    // a bit in _unconfigured_messages
+    bool _configure_config_set(const config_list *list, uint8_t count, uint32_t unconfig_bit);
+
+    // find index in active_config list
+    int8_t find_active_config_index(ConfigKey key) const;
+
+    // return true if GPS is capable of F9 config
+    bool supports_F9_config(void) const;
+
+#if GPS_MOVING_BASELINE
+    // config for moving baseline base
+    static const config_list config_MB_Base_uart1[];
+    static const config_list config_MB_Base_uart2[];
+
+    // config for moving baseline rover
+    static const config_list config_MB_Rover_uart1[];
+    static const config_list config_MB_Rover_uart2[];
+
+    // status of active configuration for a role
+    struct {
+        const config_list *list;
+        uint8_t count;
+        uint32_t done_mask;
+        uint32_t unconfig_bit;
+    } active_config;
+
+    // RTCM3 parser for when in moving baseline base mode
+    RTCM3_Parser *rtcm3_parser;
+#endif // GPS_MOVING_BASELINE
 };

@@ -3,9 +3,6 @@
 
 bool ModeAuto::_enter()
 {
-    plane.throttle_allows_nudging = true;
-    plane.auto_throttle_mode = true;
-    plane.auto_navigation_mode = true;
     if (plane.quadplane.available() && plane.quadplane.enable == 2) {
         plane.auto_state.vtol_mode = true;
     } else {
@@ -23,7 +20,7 @@ bool ModeAuto::_enter()
         }
     }
 
-#if SOARING_ENABLED == ENABLED
+#if HAL_SOARING_ENABLED
     plane.g2.soaring_controller.init_cruising();
 #endif
 
@@ -85,6 +82,13 @@ void ModeAuto::update()
         plane.calc_nav_roll();
         plane.calc_nav_pitch();
         plane.calc_throttle();
+    }
+}
+
+void ModeAuto::navigate()
+{
+    if (AP::ahrs().home_is_set()) {
+        plane.mission.update();
     }
 }
 

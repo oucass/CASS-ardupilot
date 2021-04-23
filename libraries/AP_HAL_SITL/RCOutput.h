@@ -1,7 +1,7 @@
 #pragma once
 
 #include <AP_HAL/AP_HAL.h>
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL && !defined(HAL_BUILD_AP_PERIPH)
 #include "AP_HAL_SITL.h"
 
 class HALSITL::RCOutput : public AP_HAL::RCOutput {
@@ -30,9 +30,9 @@ public:
     /*
       Serial LED emulation
      */
-    bool set_neopixel_num_LEDs(const uint16_t chan, uint8_t num_leds) override;
-    void set_neopixel_rgb_data(const uint16_t chan, uint32_t ledmask, uint8_t red, uint8_t green, uint8_t blue) override;
-    void neopixel_send(void) override;
+    bool set_serial_led_num_LEDs(const uint16_t chan, uint8_t num_leds, output_mode mode = MODE_PWM_NONE, uint16_t clock_mask = 0) override;
+    void set_serial_led_rgb_data(const uint16_t chan, int8_t led, uint8_t red, uint8_t green, uint8_t blue) override;
+    void serial_led_send(const uint16_t chan) override;
     
 private:
     SITL_State *_sitlState;

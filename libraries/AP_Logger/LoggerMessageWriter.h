@@ -13,6 +13,8 @@ public:
         _logger_backend = backend;
     }
 
+    bool out_of_time_for_writing_messages() const;
+
 protected:
     bool _finished = false;
     AP_Logger_Backend *_logger_backend = nullptr;
@@ -27,8 +29,7 @@ public:
 
 private:
     enum class Stage : uint8_t {
-        FORMATS = 0,
-        FIRMWARE_STRING,
+        FIRMWARE_STRING = 0,
         GIT_VERSIONS,
         SYSTEM_ID,
         PARAM_SPACE_USED,
@@ -87,9 +88,17 @@ public:
         _writeallrallypoints.set_logger_backend(backend);
     }
 
+    bool out_of_time_for_writing_messages() const;
+
     void reset() override;
     void process() override;
-    bool fmt_done() { return _fmt_done; }
+    bool fmt_done() const { return _fmt_done; }
+    bool params_done() const { return _params_done; }
+
+    // reset some writers so we push stuff out to logs again.  Will
+    // only work if we are in state DONE!
+    bool writeentiremission();
+    bool writeallrallypoints();
 
 private:
 
@@ -99,14 +108,13 @@ private:
         MULTIPLIERS,
         FORMAT_UNITS,
         PARMS,
-        SYSINFO,
-        WRITE_ENTIRE_MISSION,
-        WRITE_ALL_RALLY_POINTS,
         VEHICLE_MESSAGES,
+        RUNNING_SUBWRITERS, // must be last thing to run as we can redo bits of these
         DONE,
     };
 
     bool _fmt_done;
+    bool _params_done;
 
     Stage stage;
 

@@ -98,6 +98,11 @@
 #define AP_SERIALMANAGER_SLCAN_BUFSIZE_RX       128
 #define AP_SERIALMANAGER_SLCAN_BUFSIZE_TX       128
 
+// MSP protocol default buffer sizes
+#define AP_SERIALMANAGER_MSP_BUFSIZE_RX     128
+#define AP_SERIALMANAGER_MSP_BUFSIZE_TX     256
+#define AP_SERIALMANAGER_MSP_BAUD           115200
+
 class AP_SerialManager {
 public:
     AP_SerialManager();
@@ -134,6 +139,19 @@ public:
         SerialProtocol_RCIN = 23,
         SerialProtocol_EFI_MS = 24,                   // MegaSquirt EFI serial protocol
         SerialProtocol_LTM_Telem = 25,
+        SerialProtocol_RunCam = 26,
+        SerialProtocol_Hott = 27,
+        SerialProtocol_Scripting = 28,
+        SerialProtocol_CRSF = 29,
+        SerialProtocol_Generator = 30,
+        SerialProtocol_Winch = 31,
+        SerialProtocol_MSP = 32,
+        SerialProtocol_DJI_FPV = 33,
+        SerialProtocol_AirSpeed = 34,
+        SerialProtocol_ADSB = 35,
+        SerialProtocol_AHRS = 36,
+        SerialProtocol_SmartAudio = 37,
+        SerialProtocol_NumProtocols                    // must be the last value
     };
 
     // get singleton instance
@@ -157,10 +175,16 @@ public:
     //  returns the baudrate of that protocol on success, 0 if a serial port cannot be found
     uint32_t find_baudrate(enum SerialProtocol protocol, uint8_t instance) const;
 
+    // find_portnum - find port number (SERIALn index) for a protocol and instance, -1 for not found
+    int8_t find_portnum(enum SerialProtocol protocol, uint8_t instance) const;
+    
     // get_mavlink_channel - provides the mavlink channel associated with a given protocol (and instance)
     //  instance should be zero if searching for the first instance, 1 for the second, etc
     //  returns true if a channel is found, false if not
     bool get_mavlink_channel(enum SerialProtocol protocol, uint8_t instance, mavlink_channel_t &mav_chan) const;
+
+    // should_forward_mavlink_telemetry - returns true if this port should forward telemetry
+    bool should_forward_mavlink_telemetry(enum SerialProtocol protocol, uint8_t instance) const;
 
     // get_mavlink_protocol - provides the specific MAVLink protocol for a
     // given channel, or SerialProtocol_None if not found
@@ -170,7 +194,8 @@ public:
     void set_blocking_writes_all(bool blocking);
 
     // get the passthru ports if enabled
-    bool get_passthru(AP_HAL::UARTDriver *&port1, AP_HAL::UARTDriver *&port2, uint8_t &timeout_s) const;
+    bool get_passthru(AP_HAL::UARTDriver *&port1, AP_HAL::UARTDriver *&port2, uint8_t &timeout_s,
+                      uint32_t &baud1, uint32_t &baud2) const;
 
     // disable passthru by settings SERIAL_PASS2 to -1
     void disable_passthru(void);
@@ -193,7 +218,6 @@ private:
     struct UARTState {
         AP_Int8 protocol;
         AP_Int32 baud;
-        AP_HAL::UARTDriver* uart;
         AP_Int16 options;
     } state[SERIALMANAGER_NUM_PORTS];
 
@@ -211,7 +235,9 @@ private:
     bool protocol_match(enum SerialProtocol protocol1, enum SerialProtocol protocol2) const;
 
     // setup any special options
-    void set_options(uint8_t i);
+    void set_options(uint16_t i);
+
+    bool init_console_done;
 };
 
 namespace AP {

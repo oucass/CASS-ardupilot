@@ -2,6 +2,8 @@
 """
  APM automatic test suite
  Andrew Tridgell, October 2011
+
+ AP_FLAKE8_CLEAN
 """
 from __future__ import print_function
 import atexit
@@ -16,8 +18,9 @@ import subprocess
 import sys
 import time
 import traceback
+from distutils.dir_util import copy_tree
 
-import apmrover2
+import rover
 import arducopter
 import arduplane
 import ardusub
@@ -29,6 +32,10 @@ import examples
 from pysim import util
 from pymavlink import mavutil
 from pymavlink.generator import mavtemplate
+
+from common import Test
+
+tester = None
 
 
 def buildlogs_dirpath():
@@ -59,22 +66,25 @@ def get_default_params(atype, binary):
         frame = "+"
 
     home = "%f,%f,%u,%u" % (HOME.lat, HOME.lng, HOME.alt, HOME.heading)
+    mavproxy_master = 'tcp:127.0.0.1:5760'
     sitl = util.start_SITL(binary,
                            wipe=True,
                            model=frame,
                            home=home,
                            speedup=10,
                            unhide_parameters=True)
-    mavproxy = util.start_MAVProxy_SITL(atype)
+    mavproxy = util.start_MAVProxy_SITL(atype,
+                                        master=mavproxy_master)
     print("Dumping defaults")
-    idx = mavproxy.expect(['Saved [0-9]+ parameters to (\S+)'])
+    idx = mavproxy.expect([r'Saved [0-9]+ parameters to (\S+)'])
     if idx == 0:
         # we need to restart it after eeprom erase
         util.pexpect_close(mavproxy)
         util.pexpect_close(sitl)
         sitl = util.start_SITL(binary, model=frame, home=home, speedup=10)
-        mavproxy = util.start_MAVProxy_SITL(atype)
-        mavproxy.expect('Saved [0-9]+ parameters to (\S+)')
+        mavproxy = util.start_MAVProxy_SITL(atype,
+                                            master=mavproxy_master)
+        mavproxy.expect(r'Saved [0-9]+ parameters to (\S+)')
     parmfile = mavproxy.match.group(1)
     dest = buildlogs_path('%s-defaults.parm' % atype)
     shutil.copy(parmfile, dest)
@@ -100,23 +110,15 @@ def build_all():
 def build_binaries():
     """Run the build_binaries.py script."""
     print("Running build_binaries.py")
-    # copy the script as it changes git branch, which can change the
-    # script while running
-    orig = util.reltopdir('Tools/scripts/build_binaries.py')
-    copy = util.reltopdir('./build_binaries.py')
-    shutil.copy2(orig, copy)
 
-    # also copy generate_manifest library:
-    orig_gm = util.reltopdir('Tools/scripts/generate_manifest.py')
-    copy_gm = util.reltopdir('./generate_manifest.py')
-    shutil.copy2(orig_gm, copy_gm)
+    # copy the script (and various libraries used by the script) as it
+    # changes git branch, which can change the script while running
+    for thing in "build_binaries.py", "generate_manifest.py", "gen_stable.py", "build_binaries_history.py":
+        orig = util.reltopdir('Tools/scripts/%s' % thing)
+        copy = util.reltopdir('./%s' % thing)
+        shutil.copy2(orig, copy)
 
-    # and gen_stable.py
-    orig_gs = util.reltopdir('Tools/scripts/gen_stable.py')
-    copy_gs = util.reltopdir('./gen_stable.py')
-    shutil.copy2(orig_gs, copy_gs)
-    
-    if util.run_cmd(copy, directory=util.reltopdir('.')) != 0:
+    if util.run_cmd("./build_binaries.py", directory=util.reltopdir('.')) != 0:
         print("Failed build_binaries.py")
         return False
     return True
@@ -135,6 +137,7 @@ def build_examples():
 
     return True
 
+
 def build_unit_tests():
     """Build tests."""
     for target in ['linux']:
@@ -147,6 +150,7 @@ def build_unit_tests():
             return False
 
     return True
+
 
 def run_unit_test(test):
     print("Running (%s)" % test)
@@ -168,6 +172,26 @@ def run_unit_tests():
             success = False
     return success
 
+
+def run_clang_scan_build():
+    if util.run_cmd("scan-build python waf configure",
+                    directory=util.reltopdir('.')) != 0:
+        print("Failed scan-build-configure")
+        return False
+
+    if util.run_cmd("scan-build python waf clean",
+                    directory=util.reltopdir('.')) != 0:
+        print("Failed scan-build-clean")
+        return False
+
+    if util.run_cmd("scan-build python waf build",
+                    directory=util.reltopdir('.')) != 0:
+        print("Failed scan-build-build")
+        return False
+
+    return True
+
+
 def param_parse_filepath():
     return util.reltopdir('Tools/autotest/param_metadata/param_parse.py')
 
@@ -175,7 +199,7 @@ def param_parse_filepath():
 def all_vehicles():
     return ('ArduPlane',
             'ArduCopter',
-            'APMrover2',
+            'Rover',
             'AntennaTracker',
             'ArduSub')
 
@@ -207,11 +231,11 @@ def convert_gpx():
             util.run_cmd('gpsbabel -i gpx -f %s '
                          '-o kml,units=m,floating=1,extrude=1 -F %s' %
                          (gpx, kml))
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
             passed = False
         try:
             util.run_cmd('zip %s.kmz %s.kml' % (m, m))
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
             passed = False
         util.run_cmd("mavflightview.py --imagefile=%s.png %s" % (m, m))
     return passed
@@ -226,9 +250,14 @@ def test_prerequisites():
 
 def alarm_handler(signum, frame):
     """Handle test timeout."""
-    global results, opts
+    global results, opts, tester
     try:
         print("Alarm handler called")
+        if tester is not None:
+            if tester.rc_thread is not None:
+                tester.rc_thread_should_quit = True
+                tester.rc_thread.join()
+                tester.rc_thread = None
         results.add('TIMEOUT',
                     '<span class="failed-text">FAILED</span>',
                     opts.timeout)
@@ -250,15 +279,27 @@ def should_run_step(step):
 
 
 __bin_names = {
-    "ArduCopter": "arducopter",
-    "ArduPlane": "arduplane",
-    "APMrover2": "ardurover",
-    "AntennaTracker": "antennatracker",
-    "CopterAVC": "arducopter-heli",
+    "Copter": "arducopter",
+    "CopterTests1": "arducopter",
+    "CopterTests1a": "arducopter",
+    "CopterTests1b": "arducopter",
+    "CopterTests1c": "arducopter",
+    "CopterTests1d": "arducopter",
+    "CopterTests1e": "arducopter",
+
+    "CopterTests2": "arducopter",
+    "CopterTests2a": "arducopter",
+    "CopterTests2b": "arducopter",
+
+    "Plane": "arduplane",
+    "Rover": "ardurover",
+    "Tracker": "antennatracker",
+    "Helicopter": "arducopter-heli",
     "QuadPlane": "arduplane",
-    "ArduSub": "ardusub",
-    "balancebot": "ardurover",
+    "Sub": "ardusub",
     "BalanceBot": "ardurover",
+    "SITLPeriphGPS": "sitl_periph_gp.AP_Periph",
+    "CAN": "arducopter",
 }
 
 
@@ -269,13 +310,18 @@ def binary_path(step, debug=False):
         return None
 
     if vehicle in __bin_names:
-        binary_name = __bin_names[vehicle]
+        if len(__bin_names[vehicle].split(".")) == 2:
+            config_name = __bin_names[vehicle].split(".")[0]
+            binary_name = __bin_names[vehicle].split(".")[1]
+        else:
+            config_name = 'sitl'
+            binary_name = __bin_names[vehicle]
     else:
         # cope with builds that don't have a specific binary
         return None
 
     binary = util.reltopdir(os.path.join('build',
-                                         'sitl',
+                                         config_name,
                                          'bin',
                                          binary_name))
     if not os.path.exists(binary):
@@ -286,12 +332,14 @@ def binary_path(step, debug=False):
 
     return binary
 
+
 def split_specific_test_step(step):
     print('step=%s' % str(step))
     m = re.match("((fly|drive|dive|test)[.][^.]+)[.](.*)", step)
     if m is None:
         return None
-    return ( (m.group(1), m.group(3)) )
+    return ((m.group(1), m.group(3)))
+
 
 def find_specific_test_to_run(step):
     t = split_specific_test_step(step)
@@ -300,16 +348,32 @@ def find_specific_test_to_run(step):
     (testname, test) = t
     return "%s.%s" % (testname, test)
 
+
 tester_class_map = {
-    "fly.ArduCopter": arducopter.AutoTestCopter,
-    "fly.ArduPlane": arduplane.AutoTestPlane,
-    "fly.QuadPlane": quadplane.AutoTestQuadPlane,
-    "drive.APMrover2": apmrover2.AutoTestRover,
-    "drive.balancebot": balancebot.AutoTestBalanceBot,
-    "fly.CopterAVC": arducopter.AutoTestHeli,
-    "dive.ArduSub": ardusub.AutoTestSub,
-    "test.AntennaTracker": antennatracker.AutoTestTracker,
+    "test.Copter": arducopter.AutoTestCopter,
+    "test.CopterTests1": arducopter.AutoTestCopterTests1,               # travis-ci
+    "test.CopterTests1a": arducopter.AutoTestCopterTests1a, # 8m43s
+    "test.CopterTests1b": arducopter.AutoTestCopterTests1b, # 8m5s
+    "test.CopterTests1c": arducopter.AutoTestCopterTests1c, # 5m17s
+    "test.CopterTests1d": arducopter.AutoTestCopterTests1d, # 8m20s
+    "test.CopterTests1e": arducopter.AutoTestCopterTests1e, # 8m32s
+    "test.CopterTests2": arducopter.AutoTestCopterTests2,               # travis-ci
+    "test.CopterTests2a": arducopter.AutoTestCopterTests2a, # 8m23s
+    "test.CopterTests2b": arducopter.AutoTestCopterTests2b, # 8m18s
+    "test.Plane": arduplane.AutoTestPlane,
+    "test.QuadPlane": quadplane.AutoTestQuadPlane,
+    "test.Rover": rover.AutoTestRover,
+    "test.BalanceBot": balancebot.AutoTestBalanceBot,
+    "test.Helicopter": arducopter.AutoTestHeli,
+    "test.Sub": ardusub.AutoTestSub,
+    "test.Tracker": antennatracker.AutoTestTracker,
+    "test.CAN": arducopter.AutoTestCAN,
 }
+
+suplementary_test_binary_map = {
+    "test.CAN": ["sitl_periph_gps.AP_Periph", "sitl_periph_gps.AP_Periph.1"],
+}
+
 
 def run_specific_test(step, *args, **kwargs):
     t = split_specific_test_step(step)
@@ -318,15 +382,19 @@ def run_specific_test(step, *args, **kwargs):
     (testname, test) = t
 
     tester_class = tester_class_map[testname]
+    global tester
     tester = tester_class(*args, **kwargs)
 
     print("Got %s" % str(tester))
     for a in tester.tests():
-        print("Got %s" % (a[0]))
-        if a[0] == test:
+        if not hasattr(a, 'name'):
+            a = Test(a[0], a[1], a[2])
+        print("Got %s" % (a.name))
+        if a.name == test:
             return tester.run_tests([a])
     print("Failed to find test %s on %s" % (test, testname))
     sys.exit(1)
+
 
 def run_step(step):
     """Run one step."""
@@ -342,37 +410,71 @@ def run_step(step):
         "debug": opts.debug,
         "clean": not opts.no_clean,
         "configure": not opts.no_configure,
+        "math_check_indexes": opts.math_check_indexes,
         "extra_configure_args": opts.waf_configure_args,
     }
 
+    if opts.Werror:
+        build_opts['extra_configure_args'].append("--Werror")
+
     vehicle_binary = None
-    if step == 'build.ArduPlane':
+    if step == 'build.Plane':
         vehicle_binary = 'bin/arduplane'
 
-    if step == 'build.APMrover2':
+    if step == 'build.Rover':
         vehicle_binary = 'bin/ardurover'
 
-    if step == 'build.ArduCopter':
+    if step == 'build.Copter':
         vehicle_binary = 'bin/arducopter'
 
-    if step == 'build.AntennaTracker':
+    if step == 'build.Tracker':
         vehicle_binary = 'bin/antennatracker'
 
     if step == 'build.Helicopter':
         vehicle_binary = 'bin/arducopter-heli'
 
-    if step == 'build.ArduSub':
+    if step == 'build.Sub':
         vehicle_binary = 'bin/ardusub'
 
+    if step == 'build.SITLPeriphGPS':
+        vehicle_binary = 'sitl_periph_gps.bin/AP_Periph'
+
+    if step == 'build.Replay':
+        return util.build_replay(board='SITL')
+
     if vehicle_binary is not None:
-        return util.build_SITL(vehicle_binary, **build_opts)
+        if len(vehicle_binary.split(".")) == 1:
+            return util.build_SITL(vehicle_binary, **build_opts)
+        else:
+            return util.build_SITL(
+                vehicle_binary.split(".")[1],
+                board=vehicle_binary.split(".")[0],
+                **build_opts
+            )
 
     binary = binary_path(step, debug=opts.debug)
 
     if step.startswith("defaults"):
         vehicle = step[9:]
         return get_default_params(vehicle, binary)
-
+    supplementary_binaries = []
+    if step in suplementary_test_binary_map:
+        for supplementary_test_binary in suplementary_test_binary_map[step]:
+            config_name = supplementary_test_binary.split('.')[0]
+            binary_name = supplementary_test_binary.split('.')[1]
+            instance_num = 0
+            if len(supplementary_test_binary.split('.')) >= 3:
+                instance_num = int(supplementary_test_binary.split('.')[2])
+            supplementary_binaries.append([util.reltopdir(os.path.join('build',
+                                                                       config_name,
+                                                                       'bin',
+                                                                       binary_name)),
+                                          '-I {}'.format(instance_num)])
+        # we are running in conjunction with a supplementary app
+        # can't have speedup
+        opts.speedup = 1.0
+    else:
+        supplementary_binaries = []
     fly_opts = {
         "viewerip": opts.viewerip,
         "use_map": opts.map,
@@ -384,15 +486,22 @@ def run_step(step):
         "disable_breakpoints": opts.disable_breakpoints,
         "frame": opts.frame,
         "_show_test_timings": opts.show_test_timings,
+        "force_ahrs_type": opts.force_ahrs_type,
+        "logs_dir": buildlogs_dirpath(),
+        "sup_binaries": supplementary_binaries,
     }
     if opts.speedup is not None:
         fly_opts["speedup"] = opts.speedup
 
-    # handle "fly.ArduCopter" etc:
+    # handle "test.Copter" etc:
     if step in tester_class_map:
-        t = tester_class_map[step](binary, **fly_opts)
-        return (t.autotest(), t)
+        # create an instance of the tester class:
+        global tester
+        tester = tester_class_map[step](binary, **fly_opts)
+        # run the test and return its result and the tester itself
+        return (tester.autotest(), tester)
 
+    # handle "test.Copter.CPUFailsafe" etc:
     specific_test_to_run = find_specific_test_to_run(step)
     if specific_test_to_run is not None:
         return run_specific_test(specific_test_to_run, binary, **fly_opts)
@@ -421,6 +530,9 @@ def run_step(step):
     if step == 'run.unit_tests':
         return run_unit_tests()
 
+    if step == 'clang-scan-build':
+        return run_clang_scan_build()
+
     raise RuntimeError("Unknown step %s" % step)
 
 
@@ -446,6 +558,8 @@ class TestResults(object):
         self.githash = util.run_cmd('git rev-parse HEAD',
                                     output=True,
                                     directory=util.reltopdir('.')).strip()
+        if sys.version_info.major >= 3:
+            self.githash = self.githash.decode('utf-8')
         self.tests = []
         self.files = []
         self.images = []
@@ -508,6 +622,7 @@ def write_webresults(results_to_write):
         f.close()
     for f in glob.glob(util.reltopdir('Tools/autotest/web/*.png')):
         shutil.copy(f, buildlogs_path(os.path.basename(f)))
+    copy_tree(util.reltopdir("Tools/autotest/web/css"), buildlogs_path("css"))
     results_to_write.generate_badge()
 
 
@@ -521,10 +636,7 @@ def write_fullresults():
     results.addglob("GPX track", '*.gpx')
 
     # results common to all vehicles:
-    vehicle_files = [('{vehicle} build log', '{vehicle}.txt'),
-                     ('{vehicle} code size', '{vehicle}.sizes.txt'),
-                     ('{vehicle} stack sizes', '{vehicle}.framesizes.txt'),
-                     ('{vehicle} defaults', '{vehicle}-defaults.parm'),
+    vehicle_files = [('{vehicle} defaults', '{vehicle}-defaults.parm'),
                      ('{vehicle} core', '{vehicle}.core'),
                      ('{vehicle} ELF', '{vehicle}.elf'), ]
     vehicle_globs = [('{vehicle} log', '{vehicle}-*.BIN'), ]
@@ -545,41 +657,11 @@ def write_fullresults():
     results.addglob('APM:Libraries documentation', 'docs/libraries/index.html')
     results.addglob('APM:Plane documentation', 'docs/ArduPlane/index.html')
     results.addglob('APM:Copter documentation', 'docs/ArduCopter/index.html')
-    results.addglob('APM:Rover documentation', 'docs/APMrover2/index.html')
+    results.addglob('APM:Rover documentation', 'docs/Rover/index.html')
     results.addglob('APM:Sub documentation', 'docs/ArduSub/index.html')
     results.addglobimage("Flight Track", '*.png')
 
     write_webresults(results)
-
-
-def check_logs(step):
-    """Check for log files from a step."""
-    print("check step: ", step)
-    if step.startswith('fly.'):
-        vehicle = step[4:]
-    elif step.startswith('drive.'):
-        vehicle = step[6:]
-    elif step.startswith('dive.'):
-        vehicle = step[5:]
-    else:
-        return
-    logs = glob.glob("logs/*.BIN")
-    for log in logs:
-        bname = os.path.basename(log)
-        newname = buildlogs_path("%s-%s" % (vehicle, bname))
-        print("Renaming %s to %s" % (log, newname))
-        shutil.move(log, newname)
-
-    corefile = "core"
-    if os.path.exists(corefile):
-        newname = buildlogs_path("%s.core" % vehicle)
-        print("Renaming %s to %s" % (corefile, newname))
-        shutil.move(corefile, newname)
-        try:
-            util.run_cmd('/bin/cp build/sitl/bin/* %s' % buildlogs_dirpath(),
-                         directory=util.reltopdir('.'))
-        except Exception:
-            print("Unable to save binary")
 
 
 def run_tests(steps):
@@ -603,7 +685,6 @@ def run_tests(steps):
                 results.add(step, '<span class="passed-text">PASSED</span>',
                             time.time() - t1)
                 print(">>>> PASSED STEP: %s at %s" % (step, time.asctime()))
-                check_logs(step)
             else:
                 print(">>>> FAILED STEP: %s at %s" % (step, time.asctime()))
                 passed = False
@@ -623,7 +704,15 @@ def run_tests(steps):
             results.add(step,
                         '<span class="failed-text">FAILED</span>',
                         time.time() - t1)
-            check_logs(step)
+
+        global tester
+        if tester is not None and tester.rc_thread is not None:
+            if passed:
+                print("BAD: RC Thread still alive after run_step")
+            tester.rc_thread_should_quit = True
+            tester.rc_thread.join()
+            tester.rc_thread = None
+
     if not passed:
         keys = failed_testinstances.keys()
         if len(keys):
@@ -644,13 +733,75 @@ def run_tests(steps):
     return passed
 
 
+vehicle_list = ['Sub', 'Copter', 'Plane', 'Tracker', 'Rover', 'QuadPlane', 'BalanceBot', 'Helicopter']
+
+
+def list_subtests():
+    """Print the list of tests and tests description for each vehicle."""
+    for vehicle in sorted(vehicle_list):
+        tester_class = tester_class_map["test.%s" % vehicle]
+        tester = tester_class("/bin/true", None)
+        subtests = tester.tests()
+        sorted_list = []
+        for subtest in subtests:
+            if type(subtest) is tuple:
+                (name, description, function) = subtest
+                sorted_list.append([name, description])
+            else:
+                sorted_list.append([subtest.name, subtest.description])
+        sorted_list.sort()
+
+        print("%s:" % vehicle)
+        for subtest in sorted_list:
+            print("    %s: %s" % (subtest[0], subtest[1]))
+        print("")
+
+
+def list_subtests_for_vehicle(vehicle_type):
+    """Print the list of tests for a vehicle."""
+    # Check that we aren't in a sub test
+    if "Test" in vehicle_type:
+        vehicle_type = re.findall('[A-Z][a-z0-9]*', vehicle_type)[0]
+    if vehicle_type in vehicle_list:
+        tester_class = tester_class_map["test.%s" % vehicle_type]
+        tester = tester_class("/bin/true", None)
+        subtests = tester.tests()
+        sorted_list = []
+        for subtest in subtests:
+            if type(subtest) is tuple:
+                (name, description, function) = subtest
+                sorted_list.append([name, description])
+            else:
+                sorted_list.append([subtest.name, subtest.description])
+        sorted_list.sort()
+        for subtest in sorted_list:
+            print("%s " % subtest[0], end='')
+        print("")  # needed to clear the trailing %
+
+
 if __name__ == "__main__":
     ''' main program '''
     os.environ['PYTHONUNBUFFERED'] = '1'
 
-    os.putenv('TMPDIR', util.reltopdir('tmp'))
+    if sys.platform != "darwin":
+        os.putenv('TMPDIR', util.reltopdir('tmp'))
 
-    parser = optparse.OptionParser("autotest")
+    class MyOptionParser(optparse.OptionParser):
+        def format_epilog(self, formatter):
+            return self.epilog
+
+    parser = MyOptionParser(
+        "autotest", epilog=""
+        "e.g. autotest.py build.Rover test.Rover # test Rover\n"
+        "e.g. autotest.py build.Rover test.Rover build.Plane test.Plane # test Rover and Plane\n"
+        "e.g. autotest.py --debug --valgrind build.Rover test.Rover # test Rover under Valgrind\n"
+        "e.g. autotest.py --debug --gdb build.Tracker test.Tracker # run Tracker under gdb\n"
+        "e.g. autotest.py --debug --gdb build.Sub test.Sub.DiveManual # do specific Sub test\n"
+    )
+    parser.add_option("--autotest-server",
+                      action='store_true',
+                      default=False,
+                      help='Run in autotest-server mode; dangerous!')
     parser.add_option("--skip",
                       type='string',
                       default='',
@@ -659,6 +810,10 @@ if __name__ == "__main__":
                       action='store_true',
                       default=False,
                       help='list the available steps')
+    parser.add_option("--list-subtests",
+                      action='store_true',
+                      default=False,
+                      help='list available subtests e.g. test.Copter')
     parser.add_option("--viewerip",
                       default=None,
                       help='IP address to send MAVLink and fg packets to')
@@ -671,7 +826,7 @@ if __name__ == "__main__":
                       action='store_true',
                       help='enable experimental tests')
     parser.add_option("--timeout",
-                      default=3600,
+                      default=None,
                       type='int',
                       help='maximum runtime in seconds')
     parser.add_option("--frame",
@@ -682,6 +837,14 @@ if __name__ == "__main__":
                       action="store_true",
                       default=False,
                       help="show how long each test took to run")
+    parser.add_option("--validate-parameters",
+                      action="store_true",
+                      default=False,
+                      help="validate vehicle parameter files")
+    parser.add_option("--Werror",
+                      action='store_true',
+                      default=False,
+                      help='configure with --Werror')
 
     group_build = optparse.OptionGroup(parser, "Build options")
     group_build.add_option("--no-configure",
@@ -705,6 +868,11 @@ if __name__ == "__main__":
                            default=False,
                            action='store_true',
                            help='make built binaries debug binaries')
+    group_build.add_option("--enable-math-check-indexes",
+                           default=False,
+                           action="store_true",
+                           dest="math_check_indexes",
+                           help="enable checking of math indexes")
     parser.add_option_group(group_build)
 
     group_sim = optparse.OptionGroup(parser, "Simulation options")
@@ -737,9 +905,36 @@ if __name__ == "__main__":
                          default=False,
                          action='store_true',
                          help="disable all breakpoints before starting")
+    group_sim.add_option("", "--force-ahrs-type",
+                         dest="force_ahrs_type",
+                         default=None,
+                         help="force a specific AHRS type (e.g. 10 for SITL-ekf")
     parser.add_option_group(group_sim)
 
+    group_completion = optparse.OptionGroup(parser, "Completion helpers")
+    group_completion.add_option("--list-vehicles",
+                                action='store_true',
+                                default=False,
+                                help='list available vehicles')
+    group_completion.add_option("--list-vehicles-test",
+                                action='store_true',
+                                default=False,
+                                help='list available vehicle tester')
+    group_completion.add_option("--list-subtests-for-vehicle",
+                                type='string',
+                                default="",
+                                help='list available subtests for a vehicle e.g Copter')
+    parser.add_option_group(group_completion)
+
     opts, args = parser.parse_args()
+
+    if opts.timeout is None:
+        opts.timeout = 5400
+        # adjust if we're running in a regime which may slow us down e.g. Valgrind
+        if opts.valgrind:
+            opts.timeout *= 10
+        elif opts.gdb:
+            opts.timeout = None
 
     steps = [
         'prerequisites',
@@ -747,48 +942,131 @@ if __name__ == "__main__":
         'build.All',
         'build.Parameters',
 
+        'build.Replay',
+
         'build.unit_tests',
         'run.unit_tests',
         'build.examples',
         'run.examples',
 
-        'build.ArduPlane',
-        'defaults.ArduPlane',
-        'fly.ArduPlane',
-        'fly.QuadPlane',
+        'build.Plane',
+        'defaults.Plane',
+        'test.Plane',
+        'test.QuadPlane',
 
-        'build.APMrover2',
-        'defaults.APMrover2',
-        'drive.APMrover2',
-        'drive.balancebot',
+        'build.Rover',
+        'defaults.Rover',
+        'test.Rover',
+        'test.BalanceBot',
 
-        'build.ArduCopter',
-        'defaults.ArduCopter',
-        'fly.ArduCopter',
+        'build.Copter',
+        'defaults.Copter',
+        'test.Copter',
 
         'build.Helicopter',
-        'fly.CopterAVC',
+        'test.Helicopter',
 
-        'build.AntennaTracker',
-        'defaults.AntennaTracker',
-        'test.AntennaTracker',
+        'build.Tracker',
+        'defaults.Tracker',
+        'test.Tracker',
 
-        'build.ArduSub',
-        'defaults.ArduSub',
-        'dive.ArduSub',
+        'build.Sub',
+        'defaults.Sub',
+        'test.Sub',
+
+        'build.SITLPeriphGPS',
+        'test.CAN',
 
         'convertgpx',
     ]
 
+    moresteps = [
+        'test.CopterTests1',
+        'test.CopterTests1a',
+        'test.CopterTests1b',
+        'test.CopterTests1c',
+        'test.CopterTests1d',
+        'test.CopterTests1e',
+
+        'test.CopterTests2',
+        'test.CopterTests2a',
+        'test.CopterTests2b',
+
+        'clang-scan-build',
+    ]
+
+    # canonicalise the step names.  This allows
+    # backwards-compatability from the hodge-podge
+    # fly.ArduCopter/drive.APMrover2 to the more common test.Copter
+    # test.Rover
+    step_mapping = {
+        "build.ArduPlane": "build.Plane",
+        "build.ArduCopter": "build.Copter",
+        "build.APMrover2": "build.Rover",
+        "build.ArduSub": "build.Sub",
+        "build.AntennaTracker": "build.Tracker",
+        "fly.ArduCopter": "test.Copter",
+        "fly.ArduPlane": "test.Plane",
+        "fly.QuadPlane": "test.QuadPlane",
+        "dive.ArduSub": "test.Sub",
+        "drive.APMrover2": "test.Rover",
+        "drive.BalanceBot": "test.BalanceBot",
+        "drive.balancebot": "test.BalanceBot",
+        "fly.CopterAVC": "test.Helicopter",
+        "test.AntennaTracker": "test.Tracker",
+        "defaults.ArduCopter": "defaults.Copter",
+        "defaults.ArduPlane": "defaults.Plane",
+        "defaults.ArduSub": "defaults.Sub",
+        "defaults.APMrover2": "defaults.Rover",
+        "defaults.AntennaTracker": "defaults.Tracker",
+        "fly.ArduCopterTests1": "test.CopterTests1",
+        "fly.ArduCopterTests1a": "test.CopterTests1a",
+        "fly.ArduCopterTests1b": "test.CopterTests1b",
+        "fly.ArduCopterTests1c": "test.CopterTests1c",
+        "fly.ArduCopterTests1d": "test.CopterTests1d",
+        "fly.ArduCopterTests1e": "test.CopterTests1e",
+
+        "fly.ArduCopterTests2": "test.CopterTests2",
+        "fly.ArduCopterTests2a": "test.CopterTests2a",
+        "fly.ArduCopterTests2b": "test.CopterTests2b",
+
+    }
+
+    # form up a list of bits NOT to run, mapping from old step names
+    # to new step names as appropriate.
     skipsteps = opts.skip.split(',')
+    new_skipsteps = []
+    for skipstep in skipsteps:
+        if skipstep in step_mapping:
+            new_skipsteps.append(step_mapping[skipstep])
+        else:
+            new_skipsteps.append(skipstep)
+    skipsteps = new_skipsteps
 
     # ensure we catch timeouts
     signal.signal(signal.SIGALRM, alarm_handler)
-    signal.alarm(opts.timeout)
+    if opts.timeout is not None:
+        signal.alarm(opts.timeout)
 
     if opts.list:
         for step in steps:
             print(step)
+        sys.exit(0)
+
+    if opts.list_subtests:
+        list_subtests()
+        sys.exit(0)
+
+    if opts.list_subtests_for_vehicle:
+        list_subtests_for_vehicle(opts.list_subtests_for_vehicle)
+        sys.exit(0)
+
+    if opts.list_vehicles_test:
+        print(' '.join(__bin_names.keys()))
+        sys.exit(0)
+
+    if opts.list_vehicles:
+        print(' '.join(vehicle_list))
         sys.exit(0)
 
     util.mkdir_p(buildlogs_dirpath())
@@ -803,6 +1081,14 @@ if __name__ == "__main__":
 
     atexit.register(util.pexpect_close_all)
 
+    # provide backwards-compatability from (e.g.) drive.APMrover2 -> test.Rover
+    newargs = []
+    for arg in args:
+        for _from, to in step_mapping.items():
+            arg = re.sub("^%s" % _from, to, arg)
+        newargs.append(arg)
+    args = newargs
+
     if len(args) > 0:
         # allow a wildcard list of steps
         matched = []
@@ -813,11 +1099,20 @@ if __name__ == "__main__":
             if x is not None:
                 matches.append(x)
 
+            if a in moresteps:
+                matches.append(a)
+
             if not len(matches):
                 print("No steps matched {}".format(a))
                 sys.exit(1)
             matched.extend(matches)
         steps = matched
+    elif opts.autotest_server:
+        # we will be changing this script to give a help message if
+        # --autotest-server isn't given, instead of assuming we want
+        # to do everything that happens on autotest.ardupilot.org,
+        # which includes some significant state-changing actions.
+        print("AutoTest-Server Mode")
 
     # skip steps according to --skip option:
     steps_to_run = [s for s in steps if should_run_step(s)]
@@ -828,8 +1123,9 @@ if __name__ == "__main__":
         if not run_tests(steps_to_run):
             sys.exit(1)
     except KeyboardInterrupt:
+        print("KeyboardInterrupt caught; closing pexpect connections")
         util.pexpect_close_all()
-        sys.exit(1)
+        raise
     except Exception:
         # make sure we kill off any children
         util.pexpect_close_all()

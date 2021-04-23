@@ -2,20 +2,25 @@
 
 #include <AC_Fence/AC_Fence.h>
 
-MAV_MISSION_RESULT MissionItemProtocol_Fence::get_item(const GCS_MAVLINK &_link,
-                                                       const mavlink_message_t &msg,
-                                                       const mavlink_mission_request_int_t &packet,
-                                                       mavlink_mission_item_int_t &ret_packet)
+/*
+  public function to format mission item as mavlink_mission_item_int_t
+ */
+bool MissionItemProtocol_Fence::get_item_as_mission_item(uint16_t seq,
+                                                         mavlink_mission_item_int_t &ret_packet)
 {
-    const uint8_t num_stored_items = _fence.polyfence().num_stored_items();
-    if (packet.seq > num_stored_items) {
-        return MAV_MISSION_INVALID_SEQUENCE;
+    AC_Fence *fence = AP::fence();
+    if (fence == nullptr) {
+        return false;
+    }
+    const uint8_t num_stored_items = fence->polyfence().num_stored_items();
+    if (seq > num_stored_items) {
+        return false;
     }
 
     AC_PolyFenceItem fenceitem;
 
-    if (!_fence.polyfence().get_item(packet.seq, fenceitem)) {
-        return MAV_MISSION_ERROR;
+    if (!fence->polyfence().get_item(seq, fenceitem)) {
+        return false;
     }
 
     MAV_CMD ret_cmd = MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION; // initialised to avoid compiler warning
@@ -41,7 +46,7 @@ MAV_MISSION_RESULT MissionItemProtocol_Fence::get_item(const GCS_MAVLINK &_link,
         p1 = fenceitem.radius;
         break;
     case AC_PolyFenceType::END_OF_STORAGE:
-        return MAV_MISSION_ERROR;
+        return false;
     }
 
     ret_packet.command = ret_cmd;
@@ -49,6 +54,23 @@ MAV_MISSION_RESULT MissionItemProtocol_Fence::get_item(const GCS_MAVLINK &_link,
     ret_packet.x = fenceitem.loc.x;
     ret_packet.y = fenceitem.loc.y;
     ret_packet.z = 0;
+
+    return true;
+}
+
+MAV_MISSION_RESULT MissionItemProtocol_Fence::get_item(const GCS_MAVLINK &_link,
+                                                       const mavlink_message_t &msg,
+                                                       const mavlink_mission_request_int_t &packet,
+                                                       mavlink_mission_item_int_t &ret_packet)
+{
+    const uint8_t num_stored_items = _fence.polyfence().num_stored_items();
+    if (packet.seq > num_stored_items) {
+        return MAV_MISSION_INVALID_SEQUENCE;
+    }
+
+    if (!get_item_as_mission_item(packet.seq, ret_packet)) {
+        return MAV_MISSION_ERROR;
+    }
 
     return MAV_MISSION_ACCEPTED;
 }
@@ -103,7 +125,7 @@ static MAV_MISSION_RESULT convert_MISSION_ITEM_INT_to_AC_PolyFenceItem(const mav
 MAV_MISSION_RESULT MissionItemProtocol_Fence::replace_item(const mavlink_mission_item_int_t &mission_item_int)
 {
     if (_new_items == nullptr) {
-        AP::internalerror().error(AP_InternalError::error_t::flow_of_control);
+        INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
         return MAV_MISSION_ERROR;
     }
     if (mission_item_int.seq >= _new_items_count) {
@@ -180,12 +202,11 @@ MAV_MISSION_RESULT MissionItemProtocol_Fence::allocate_receive_resources(const u
     if (_new_items != nullptr) {
         // this is an error - the base class should have called
         // free_upload_resources first
-        AP::internalerror().error(AP_InternalError::error_t::flow_of_control);
+        INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
         return MAV_MISSION_ERROR;
     }
 
     const uint16_t allocation_size = count * sizeof(AC_PolyFenceItem);
-    gcs().send_text(MAV_SEVERITY_DEBUG, "Allocating %u bytes for fence upload", allocation_size);
     if (allocation_size != 0) {
         _new_items = (AC_PolyFenceItem*)malloc(allocation_size);
         if (_new_items == nullptr) {

@@ -1,21 +1,23 @@
 #pragma once
 
-#include "AP_Proximity.h"
-#include "AP_Proximity_Backend.h"
+#include "AP_Proximity_Backend_Serial.h"
+
+#if HAL_PROXIMITY_ENABLED
 
 #define PROXIMITY_SF40C_TIMEOUT_MS            200   // requests timeout after 0.2 seconds
 #define PROXIMITY_SF40C_PAYLOAD_LEN_MAX       256   // maximum payload size we can accept (in some configurations sensor may send as large as 1023)
+#define PROXIMITY_SF40C_COMBINE_READINGS        7   // combine this many readings together to improve efficiency
 
-class AP_Proximity_LightWareSF40C : public AP_Proximity_Backend
+class AP_Proximity_LightWareSF40C : public AP_Proximity_Backend_Serial
 {
 
 public:
     // constructor
-    AP_Proximity_LightWareSF40C(AP_Proximity &_frontend,
-                                AP_Proximity::Proximity_State &_state);
+    using AP_Proximity_Backend_Serial::AP_Proximity_Backend_Serial;
 
-    // static detection function
-    static bool detect();
+    uint16_t rxspace() const override {
+        return 1280;
+    };
 
     // update state
     void update(void) override;
@@ -28,7 +30,6 @@ private:
 
     // initialise sensor
     void initialise();
-    void init_sectors();
 
     // restart sensor and re-init our state
     void restart_sensor();
@@ -105,13 +106,14 @@ private:
     void process_message();
 
     // internal variables
-    AP_HAL::UARTDriver *_uart;              // uart for communicating with sensor
-    bool _sector_initialised;               // true if sectors have been initialised
     uint32_t _last_request_ms;              // system time of last request
     uint32_t _last_reply_ms;                // system time of last valid reply
     uint32_t _last_restart_ms;              // system time we restarted the sensor
     uint32_t _last_distance_received_ms;    // system time of last distance measurement received from sensor
-    uint8_t _last_sector = UINT8_MAX;       // sector of last distance_cm
+    AP_Proximity_Boundary_3D::Face _face;   // face of _face_distance
+    float _face_distance;                   // shortest distance (in meters) on face
+    float _face_yaw_deg;                    // yaw angle (in degrees) of shortest distance on face
+    bool _face_distance_valid;              // true if face has at least one valid distance
 
     // state of sensor
     struct {
@@ -149,3 +151,5 @@ private:
     uint32_t buff_to_uint32(uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3) const;
     uint16_t buff_to_uint16(uint8_t b0, uint8_t b1) const;
 };
+
+#endif // HAL_PROXIMITY_ENABLED

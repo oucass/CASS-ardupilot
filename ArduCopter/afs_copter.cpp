@@ -25,7 +25,7 @@ void AP_AdvancedFailsafe_Copter::terminate_vehicle(void)
         copter.motors->output();
 
         // disarm as well
-        copter.arming.disarm();
+        copter.arming.disarm(AP_Arming::Method::AFS);
     
         // and set all aux channels
         SRV_Channels::set_output_limit(SRV_Channel::k_heli_rsc, SRV_Channel::Limit::TRIM);
@@ -61,7 +61,7 @@ void AP_AdvancedFailsafe_Copter::setup_IO_failsafe(void)
  */
 AP_AdvancedFailsafe::control_mode AP_AdvancedFailsafe_Copter::afs_mode(void)
 {
-    switch (copter.control_mode) {
+    switch (copter.flightmode->mode_number()) {
     case Mode::Number::AUTO:
     case Mode::Number::GUIDED:
     case Mode::Number::RTL:

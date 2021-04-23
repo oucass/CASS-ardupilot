@@ -132,13 +132,6 @@
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
-// MOUNT (ANTENNA OR CAMERA)
-//
-#ifndef MOUNT
-#define MOUNT          ENABLED
-#endif
-
-//////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 // FLIGHT AND NAVIGATION CONTROL
 //////////////////////////////////////////////////////////////////////////////
@@ -254,27 +247,14 @@
 #endif
 
 // use this to disable geo-fencing
-#ifndef GEOFENCE_ENABLED
- # define GEOFENCE_ENABLED ENABLED
-#endif
-
-// pwm value on FENCE_CHANNEL to use to enable fenced mode
-#ifndef FENCE_ENABLE_PWM
- # define FENCE_ENABLE_PWM 1750
+#ifndef AC_FENCE
+ # define AC_FENCE ENABLED
 #endif
 
 // a digital pin to set high when the geo-fence triggers. Defaults
 // to -1, which means don't activate a pin
 #ifndef FENCE_TRIGGERED_PIN
  # define FENCE_TRIGGERED_PIN -1
-#endif
-
-// if RESET_SWITCH_CH is not zero, then this is the PWM value on
-// that channel where we reset the control mode to the current switch
-// position (to for example return to switched mode after failsafe or
-// fence breach)
-#ifndef RESET_SWITCH_CHAN_PWM
- # define RESET_SWITCH_CHAN_PWM 1750
 #endif
 
 #ifndef HIL_SUPPORT
@@ -284,7 +264,7 @@
 //////////////////////////////////////////////////////////////////////////////
 // Parachute release
 #ifndef PARACHUTE
-#define PARACHUTE ENABLED
+#define PARACHUTE HAL_PARACHUTE_ENABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -301,10 +281,16 @@
  #define OSD_ENABLED DISABLED
 #endif
 
-#ifndef SOARING_ENABLED
- #define SOARING_ENABLED !HAL_MINIMIZE_FEATURES
+#ifndef OFFBOARD_GUIDED
+ #define OFFBOARD_GUIDED !HAL_MINIMIZE_FEATURES
 #endif
 
 #ifndef LANDING_GEAR_ENABLED
  #define LANDING_GEAR_ENABLED !HAL_MINIMIZE_FEATURES
+#endif
+
+//////////////////////////////////////////////////////////////////////////////
+//  EKF Failsafe
+#ifndef FS_EKF_THRESHOLD_DEFAULT
+ # define FS_EKF_THRESHOLD_DEFAULT      0.8f    // EKF failsafe's default compass and velocity variance threshold above which the EKF failsafe will be triggered
 #endif

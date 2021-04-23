@@ -18,7 +18,12 @@
 #if EFI_ENABLED
 
 #include "AP_EFI_Serial_MS.h"
+#include "AP_EFI_NWPMU.h"
 #include <AP_Logger/AP_Logger.h>
+
+#if HAL_MAX_CAN_PROTOCOL_DRIVERS
+#include <AP_CANManager/AP_CANManager.h>
+#endif
 
 extern const AP_HAL::HAL& hal;
 
@@ -27,7 +32,7 @@ const AP_Param::GroupInfo AP_EFI::var_info[] = {
     // @Param: _TYPE
     // @DisplayName: EFI communication type
     // @Description: What method of communication is used for EFI #1
-    // @Values: 0:None,1:Serial-MS
+    // @Values: 0:None,1:Serial-MS,2:NWPMU
     // @User: Advanced
     // @RebootRequired: True
     AP_GROUPINFO_FLAGS("_TYPE", 1, AP_EFI, type, 0, AP_PARAM_FLAG_ENABLE),
@@ -67,9 +72,20 @@ void AP_EFI::init(void)
         // Init called twice, perhaps
         return;
     }
-    // Check for MegaSquirt Serial EFI
-    if (type == EFI_COMMUNICATION_TYPE_SERIAL_MS) {
+    switch ((Type)type.get()) {
+    case Type::NONE:
+        break;
+    case Type::MegaSquirt:
         backend = new AP_EFI_Serial_MS(*this);
+        break;
+    case Type::NWPMU:
+#if HAL_EFI_NWPWU_ENABLED
+        backend = new AP_EFI_NWPMU(*this);
+#endif
+        break;
+    default:
+        gcs().send_text(MAV_SEVERITY_INFO, "Unknown EFI type");
+        break;
     }
 }
 
@@ -92,6 +108,23 @@ bool AP_EFI::is_healthy(void) const
  */
 void AP_EFI::log_status(void)
 {
+// @LoggerMessage: EFI
+// @Description: Electronic Fuel Injection system data
+// @Field: TimeUS: Time since system startup
+// @Field: LP: Reported engine load
+// @Field: Rpm: Reported engine RPM
+// @Field: SDT: Spark Dwell Time
+// @Field: ATM: Atmospheric pressure
+// @Field: IMP: Intake manifold pressure
+// @Field: IMT: Intake manifold temperature
+// @Field: ECT: Engine Coolant Temperature
+// @Field: OilP: Oil Pressure
+// @Field: OilT: Oil temperature
+// @Field: FP: Fuel Pressure
+// @Field: FCR: Fuel Consumption Rate
+// @Field: CFV: Consumed fueld volume
+// @Field: TPS: Throttle Position
+// @Field: IDX: Index of the publishing ECU
     AP::logger().Write("EFI",
                        "TimeUS,LP,Rpm,SDT,ATM,IMP,IMT,ECT,OilP,OilT,FP,FCR,CFV,TPS,IDX",
                        "s%qsPPOOPOP--%-",
@@ -113,8 +146,23 @@ void AP_EFI::log_status(void)
                        uint8_t(state.throttle_position_percent),
                        uint8_t(state.ecu_index));
 
+// @LoggerMessage: EFI2
+// @Description: Electronic Fuel Injection system data - redux
+// @Field: TimeUS: Time since system startup
+// @Field: Healthy: True if EFI is healthy
+// @Field: ES: Engine state
+// @Field: GE: General error
+// @Field: CSE: Crankshaft sensor status
+// @Field: TS: Temperature status
+// @Field: FPS: Fuel pressure status
+// @Field: OPS: Oil pressure status
+// @Field: DS: Detonation status
+// @Field: MS: Misfire status
+// @Field: DebS: Debris status
+// @Field: SPU: Spark plug usage
+// @Field: IDX: Index of the publishing ECU
     AP::logger().Write("EFI2",
-                       "TimeUS,Healthy,ES,GE,CSE,TS,FPS,OPS,DS,MS,DS,SPU,IDX",
+                       "TimeUS,Healthy,ES,GE,CSE,TS,FPS,OPS,DS,MS,DebS,SPU,IDX",
                        "s------------",
                        "F------------",
                        "QBBBBBBBBBBBB",
@@ -133,6 +181,16 @@ void AP_EFI::log_status(void)
                        uint8_t(state.ecu_index));
 
     for (uint8_t i = 0; i < ENGINE_MAX_CYLINDERS; i++) {
+// @LoggerMessage: ECYL
+// @Description: EFI per-cylinder information
+// @Field: TimeUS: Time since system startup
+// @Field: Inst: Cylinder this data belongs to
+// @Field: IgnT: Ignition timing
+// @Field: InjT: Injection time
+// @Field: CHT: Cylinder head temperature
+// @Field: EGT: Exhaust gas temperature
+// @Field: Lambda: Estimated lambda coefficient (dimensionless ratio)
+// @Field: IDX: Index of the publishing ECU
         AP::logger().Write("ECYL",
                            "TimeUS,Inst,IgnT,InjT,CHT,EGT,Lambda,IDX",
                            "s#dsOO--",
@@ -169,10 +227,11 @@ void AP_EFI::send_mavlink_status(mavlink_channel_t chan)
         state.spark_dwell_time_ms,
         state.atmospheric_pressure_kpa,
         state.intake_manifold_pressure_kpa,
-        (state.intake_manifold_temperature - 273.0f),
-        (state.cylinder_status[0].cylinder_head_temperature - 273.0f),
+        (state.intake_manifold_temperature - C_TO_KELVIN),
+        (state.cylinder_status[0].cylinder_head_temperature - C_TO_KELVIN),
         state.cylinder_status[0].ignition_timing_deg,
-        state.cylinder_status[0].injection_time_ms);
+        state.cylinder_status[0].injection_time_ms,
+        0, 0, 0);
 }
 
 namespace AP {

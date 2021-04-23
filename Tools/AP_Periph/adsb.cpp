@@ -21,17 +21,31 @@
 
 #ifdef HAL_PERIPH_ENABLE_ADSB
 
-#include <GCS_MAVLink/GCS_MAVLink.h>
 #include <AP_SerialManager/AP_SerialManager.h>
 
 extern const AP_HAL::HAL &hal;
+
+#include "include/mavlink/v2.0/protocol.h"
+#include "include/mavlink/v2.0/mavlink_types.h"
+#include "include/mavlink/v2.0/ardupilotmega/mavlink.h"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#include "include/mavlink/v2.0/mavlink_helpers.h"
+#pragma GCC diagnostic pop
+
 
 /*
   init ADSB support
  */
 void AP_Periph_FW::adsb_init(void)
 {
-    ADSB_PORT->begin(AP_SerialManager::map_baudrate(g.adsb_baudrate), 256, 256);
+    if (g.adsb_baudrate > 0) {
+        auto *uart = hal.serial(g.adsb_port);
+        if (uart == nullptr) {
+            return;
+        }
+        uart->begin(AP_SerialManager::map_baudrate(g.adsb_baudrate), 256, 256);
+    }
 }
 
 
@@ -40,10 +54,19 @@ void AP_Periph_FW::adsb_init(void)
  */
 void AP_Periph_FW::adsb_update(void)
 {
+    if (g.adsb_baudrate <= 0) {
+        return;
+    }
+
+    auto *uart = hal.serial(g.adsb_port);
+    if (uart == nullptr) {
+        return;
+    }
+
     // look for incoming MAVLink ADSB_VEHICLE packets
-    const uint16_t nbytes = ADSB_PORT->available();
+    const uint16_t nbytes = uart->available();
     for (uint16_t i=0; i<nbytes; i++) {
-        const uint8_t c = (uint8_t)ADSB_PORT->read();
+        const uint8_t c = (uint8_t)uart->read();
 
         // Try to get a new message
         if (mavlink_parse_char(MAVLINK_COMM_0, c, &adsb.msg, &adsb.status)) {

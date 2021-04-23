@@ -113,6 +113,7 @@ private:
     bool mode_firmware_update(void);
     bool mode_init(void);
     bool mode_failsafe_radio(void);
+    bool mode_failsafe_gcs(void);
     bool set_standard_colors(void);
     bool mode_failsafe_batt(void);
     bool mode_auto_flight(void);
@@ -163,7 +164,7 @@ private:
                      uint8_t new_blue, uint8_t new_amplitude_red, uint8_t new_amplitude_green, uint8_t new_amplitude_blue,
                      uint16_t new_period, uint16_t new_phase_offset);
 
-        bool operator==(const oreo_state &os);
+        bool operator==(const oreo_state &os) const;
     };
 
     typedef struct {
@@ -179,7 +180,7 @@ private:
 
     // private members
     uint8_t _bus;
-    HAL_Semaphore_Recursive _sem;
+    HAL_Semaphore _sem;
     AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev;
     bool    _send_required;                         // true when we need to send an update to at least one led
     oreo_state _state_desired[OREOLED_NUM_LEDS];    // desired state

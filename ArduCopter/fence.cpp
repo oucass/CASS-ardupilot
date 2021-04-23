@@ -30,7 +30,7 @@ void Copter::fence_check()
             // disarm immediately if we think we are on the ground or in a manual flight mode with zero throttle
             // don't disarm if the high-altitude fence has been broken because it's likely the user has pulled their throttle to zero to bring it down
             if (ap.land_complete || (flightmode->has_manual_throttle() && ap.throttle_zero && !failsafe.radio && ((fence.get_breaches() & AC_FENCE_TYPE_ALT_MAX)== 0))){
-                arming.disarm();
+                arming.disarm(AP_Arming::Method::FENCEBREACH);
 
             } else {
 
@@ -61,6 +61,12 @@ void Copter::fence_check()
                     case AC_FENCE_ACTION_BRAKE:
                         // Try Brake, if that fails Land
                         if (!set_mode(Mode::Number::BRAKE, ModeReason::FENCE_BREACHED)) {
+                            set_mode(Mode::Number::LAND, ModeReason::FENCE_BREACHED);
+                        }
+                        break;
+                    case AC_FENCE_ACTION_SMART_RTL_OR_LAND:
+                        // Try SmartRTL, if that fails, Land
+                        if (!set_mode(Mode::Number::SMART_RTL, ModeReason::FENCE_BREACHED)) {
                             set_mode(Mode::Number::LAND, ModeReason::FENCE_BREACHED);
                         }
                         break;

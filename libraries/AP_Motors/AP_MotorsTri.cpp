@@ -13,11 +13,6 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/*
- *       AP_MotorsTri.cpp - ArduCopter motors library
- *       Code by RandyMackay. DIYDrones.com
- *
- */
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Math/AP_Math.h>
 #include <GCS_MAVLink/GCS.h>
@@ -40,13 +35,14 @@ void AP_MotorsTri::init(motor_frame_class frame_class, motor_frame_type frame_ty
     motor_enabled[AP_MOTORS_MOT_2] = true;
     motor_enabled[AP_MOTORS_MOT_4] = true;
 
+#if !APM_BUILD_TYPE(APM_BUILD_ArduPlane) // Tilt Rotors do not need a yaw servo
     // find the yaw servo
-    _yaw_servo = SRV_Channels::get_channel_for(SRV_Channel::k_motor7, AP_MOTORS_CH_TRI_YAW);
-    if (!_yaw_servo) {
+    if (!SRV_Channels::get_channel_for(SRV_Channel::k_motor7, AP_MOTORS_CH_TRI_YAW)) {
         gcs().send_text(MAV_SEVERITY_ERROR, "MotorsTri: unable to setup yaw channel");
         // don't set initialised_ok
         return;
     }
+#endif
 
     // allow mapping of motor7
     add_motor_num(AP_MOTORS_CH_TRI_YAW);
@@ -58,8 +54,10 @@ void AP_MotorsTri::init(motor_frame_class frame_class, motor_frame_type frame_ty
         _pitch_reversed = true;
     }
 
+    _mav_type = MAV_TYPE_TRICOPTER;
+
     // record successful initialisation if what we setup was the desired frame_class
-    _flags.initialised_ok = (frame_class == MOTOR_FRAME_TRI);
+    set_initialised_ok(frame_class == MOTOR_FRAME_TRI);
 }
 
 // set frame class (i.e. quad, hexa, heli) and type (i.e. x, plus)
@@ -72,7 +70,7 @@ void AP_MotorsTri::set_frame_class_and_type(motor_frame_class frame_class, motor
         _pitch_reversed = false;
     }
 
-    _flags.initialised_ok = (frame_class == MOTOR_FRAME_TRI);
+    set_initialised_ok((frame_class == MOTOR_FRAME_TRI) && SRV_Channels::function_assigned(SRV_Channel::k_motor7));
 }
 
 // set update rate to motors - a value in hertz
@@ -133,7 +131,7 @@ uint16_t AP_MotorsTri::get_motor_mask()
                           (1U << AP_MOTORS_MOT_2) |
                           (1U << AP_MOTORS_MOT_4) |
                           (1U << AP_MOTORS_CH_TRI_YAW);
-    uint16_t mask = rc_map_mask(motor_mask);
+    uint16_t mask = motor_mask_to_srv_channel_mask(motor_mask);
 
     // add parent's mask
     mask |= AP_MotorsMulticopter::get_motor_mask();

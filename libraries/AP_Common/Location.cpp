@@ -26,6 +26,7 @@ void Location::zero(void)
     memset(this, 0, sizeof(*this));
 }
 
+// Construct location using position (NEU) from ekf_origin for the given altitude frame
 Location::Location(int32_t latitude, int32_t longitude, int32_t alt_in_cm, AltFrame frame)
 {
     zero();
@@ -34,10 +35,10 @@ Location::Location(int32_t latitude, int32_t longitude, int32_t alt_in_cm, AltFr
     set_alt_cm(alt_in_cm, frame);
 }
 
-Location::Location(const Vector3f &ekf_offset_neu)
+Location::Location(const Vector3f &ekf_offset_neu, AltFrame frame)
 {
     // store alt and alt frame
-    set_alt_cm(ekf_offset_neu.z, AltFrame::ABOVE_ORIGIN);
+    set_alt_cm(ekf_offset_neu.z, frame);
 
     // calculate lat, lon
     Location ekf_origin;
@@ -264,6 +265,17 @@ void Location::offset_bearing(float bearing, float distance)
     const float ofs_east  = sinf(radians(bearing)) * distance;
     offset(ofs_north, ofs_east);
 }
+
+// extrapolate latitude/longitude given bearing, pitch and distance
+void Location::offset_bearing_and_pitch(float bearing, float pitch, float distance)
+{
+    const float ofs_north =  cosf(radians(pitch)) * cosf(radians(bearing)) * distance;
+    const float ofs_east  =  cosf(radians(pitch)) * sinf(radians(bearing)) * distance;
+    offset(ofs_north, ofs_east);
+    const int32_t dalt =  sinf(radians(pitch)) * distance *100.0f;
+    alt += dalt; 
+}
+
 
 float Location::longitude_scale() const
 {

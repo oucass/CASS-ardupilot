@@ -2,19 +2,27 @@
 
 #include "Copter.h"
 
+uint8_t GCS_Copter::sysid_this_mav() const
+{
+    return copter.g.sysid_this_mav;
+}
+
 const char* GCS_Copter::frame_string() const
 {
-    return copter.get_frame_string();
+    if (copter.motors == nullptr) {
+        return "motors not allocated";
+    }
+    return copter.motors->get_frame_string();
 }
 
 bool GCS_Copter::simple_input_active() const
 {
-    return copter.ap.simple_mode == 1;
+    return copter.simple_mode == Copter::SimpleMode::SIMPLE;
 }
 
 bool GCS_Copter::supersimple_input_active() const
 {
-    return copter.ap.simple_mode == 2;
+    return copter.simple_mode == Copter::SimpleMode::SUPERSIMPLE;
 }
 
 void GCS_Copter::update_vehicle_sensor_status_flags(void)
@@ -34,48 +42,21 @@ void GCS_Copter::update_vehicle_sensor_status_flags(void)
         MAV_SYS_STATUS_SENSOR_ATTITUDE_STABILIZATION |
         MAV_SYS_STATUS_SENSOR_YAW_POSITION;
 
-#if OPTFLOW == ENABLED
-    const OpticalFlow *optflow = AP::opticalflow();
-    if (optflow && optflow->enabled()) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
-        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
-    }
-#endif
-#if PRECISION_LANDING == ENABLED
-    if (copter.precland.enabled()) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_VISION_POSITION;
-        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_VISION_POSITION;
-    }
-#endif
-#if VISUAL_ODOMETRY_ENABLED == ENABLED
-    const AP_VisualOdom *visual_odom = AP::visualodom();
-    if (visual_odom && visual_odom->enabled()) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_VISION_POSITION;
-        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_VISION_POSITION;
-    }
-#endif
     const Copter::ap_t &ap = copter.ap;
 
     if (ap.rc_receiver_present) {
         control_sensors_present |= MAV_SYS_STATUS_SENSOR_RC_RECEIVER;
         control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_RC_RECEIVER;
     }
-#if PROXIMITY_ENABLED == ENABLED
-    if (copter.g2.proximity.sensor_present()) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_PROXIMITY;
+    if (ap.rc_receiver_present && !copter.failsafe.radio) {
+        control_sensors_health |= MAV_SYS_STATUS_SENSOR_RC_RECEIVER;
     }
-#endif
-#if RANGEFINDER_ENABLED == ENABLED
-    const RangeFinder *rangefinder = RangeFinder::get_singleton();
-    if (rangefinder && rangefinder->has_orientation(ROTATION_PITCH_270)) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_LASER_POSITION;
-    }
-#endif
 
+    // update flightmode-specific flags:
     control_sensors_present |= MAV_SYS_STATUS_SENSOR_Z_ALTITUDE_CONTROL;
     control_sensors_present |= MAV_SYS_STATUS_SENSOR_XY_POSITION_CONTROL;
 
-    switch (copter.control_mode) {
+    switch (copter.flightmode->mode_number()) {
     case Mode::Number::AUTO:
     case Mode::Number::AVOID_ADSB:
     case Mode::Number::GUIDED:
@@ -88,7 +69,9 @@ void GCS_Copter::update_vehicle_sensor_status_flags(void)
     case Mode::Number::THROW:
     case Mode::Number::SMART_RTL:
         control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_Z_ALTITUDE_CONTROL;
+        control_sensors_health |= MAV_SYS_STATUS_SENSOR_Z_ALTITUDE_CONTROL;
         control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_XY_POSITION_CONTROL;
+        control_sensors_health |= MAV_SYS_STATUS_SENSOR_XY_POSITION_CONTROL;
         break;
     case Mode::Number::ALT_HOLD:
     case Mode::Number::GUIDED_NOGPS:
@@ -96,40 +79,58 @@ void GCS_Copter::update_vehicle_sensor_status_flags(void)
     case Mode::Number::AUTOTUNE:
     case Mode::Number::FLOWHOLD:
         control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_Z_ALTITUDE_CONTROL;
+        control_sensors_health |= MAV_SYS_STATUS_SENSOR_Z_ALTITUDE_CONTROL;
         break;
     default:
         // stabilize, acro, drift, and flip have no automatic x,y or z control (i.e. all manual)
         break;
     }
 
-#if PROXIMITY_ENABLED == ENABLED
+    // optional sensors, some of which are essentially always
+    // available in the firmware:
+#if HAL_PROXIMITY_ENABLED
+    if (copter.g2.proximity.sensor_present()) {
+        control_sensors_present |= MAV_SYS_STATUS_SENSOR_PROXIMITY;
+    }
     if (copter.g2.proximity.sensor_enabled()) {
         control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_PROXIMITY;
     }
+    if (!copter.g2.proximity.sensor_failed()) {
+        control_sensors_health |= MAV_SYS_STATUS_SENSOR_PROXIMITY;
+    }
 #endif
 
-    if (ap.rc_receiver_present && !copter.failsafe.radio) {
-        control_sensors_health |= MAV_SYS_STATUS_SENSOR_RC_RECEIVER;
+#if RANGEFINDER_ENABLED == ENABLED
+    const RangeFinder *rangefinder = RangeFinder::get_singleton();
+    if (rangefinder && rangefinder->has_orientation(ROTATION_PITCH_270)) {
+        control_sensors_present |= MAV_SYS_STATUS_SENSOR_LASER_POSITION;
     }
+    if (copter.rangefinder_state.enabled) {
+        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_LASER_POSITION;
+        if (rangefinder && rangefinder->has_data_orient(ROTATION_PITCH_270)) {
+            control_sensors_health |= MAV_SYS_STATUS_SENSOR_LASER_POSITION;
+        }
+    }
+#endif
+
 #if OPTFLOW == ENABLED
+    const OpticalFlow *optflow = AP::opticalflow();
+    if (optflow && optflow->enabled()) {
+        control_sensors_present |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
+        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
+    }
     if (optflow && optflow->healthy()) {
         control_sensors_health |= MAV_SYS_STATUS_SENSOR_OPTICAL_FLOW;
     }
 #endif
+
 #if PRECISION_LANDING == ENABLED
+    if (copter.precland.enabled()) {
+        control_sensors_present |= MAV_SYS_STATUS_SENSOR_VISION_POSITION;
+        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_VISION_POSITION;
+    }
     if (copter.precland.enabled() && copter.precland.healthy()) {
         control_sensors_health |= MAV_SYS_STATUS_SENSOR_VISION_POSITION;
-    }
-#endif
-#if VISUAL_ODOMETRY_ENABLED == ENABLED
-    if (visual_odom && visual_odom->enabled() && visual_odom->healthy()) {
-        control_sensors_health |= MAV_SYS_STATUS_SENSOR_VISION_POSITION;
-    }
-#endif
-
-#if PROXIMITY_ENABLED == ENABLED
-    if (!copter.g2.proximity.sensor_failed()) {
-        control_sensors_health |= MAV_SYS_STATUS_SENSOR_PROXIMITY;
     }
 #endif
 
@@ -147,15 +148,6 @@ void GCS_Copter::update_vehicle_sensor_status_flags(void)
         control_sensors_enabled |= MAV_SYS_STATUS_TERRAIN;
         control_sensors_health  |= MAV_SYS_STATUS_TERRAIN;
         break;
-    }
-#endif
-
-#if RANGEFINDER_ENABLED == ENABLED
-    if (copter.rangefinder_state.enabled) {
-        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_LASER_POSITION;
-        if (rangefinder && rangefinder->has_data_orient(ROTATION_PITCH_270)) {
-            control_sensors_health |= MAV_SYS_STATUS_SENSOR_LASER_POSITION;
-        }
     }
 #endif
 }

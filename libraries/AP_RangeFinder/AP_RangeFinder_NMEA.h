@@ -27,7 +27,7 @@ public:
 
 protected:
 
-    virtual MAV_DISTANCE_SENSOR _get_mav_distance_sensor_type() const override {
+    MAV_DISTANCE_SENSOR _get_mav_distance_sensor_type() const override {
         return MAV_DISTANCE_SENSOR_ULTRASOUND;
     }
 
@@ -37,16 +37,20 @@ private:
     enum sentence_types : uint8_t {
         SONAR_UNKNOWN = 0,
         SONAR_DBT,
-        SONAR_DPT
+        SONAR_DPT,
+        SONAR_MTW   // mean water temperature
     };
 
-    // get a reading
+    // get a distance reading
     bool get_reading(uint16_t &reading_cm) override;
+
+    // get temperature reading in C.  returns true on success and populates temp argument
+    bool get_temp(float &temp) override;
 
     uint16_t read_timeout_ms() const override { return 3000; }
 
     // add a single character to the buffer and attempt to decode
-    // returns true if a complete sentence was successfully decoded
+    // returns true if a distance was successfully decoded
     // distance should be pulled directly from _distance_m member
     bool decode(char c);
 
@@ -58,8 +62,12 @@ private:
     char _term[15];                         // buffer for the current term within the current sentence
     uint8_t _term_offset;                   // offset within the _term buffer where the next character should be placed
     uint8_t _term_number;                   // term index within the current sentence
-    float _distance_m = -1.0f;                      // distance in meters parsed from a term, -1 if no distance
+    float _distance_m = -1.0f;              // distance in meters parsed from a term, -1 if no distance
+    float _temp_unvalidated;                // unvalidated temperature in C (may have failed checksum)
+    float _temp;                            // temperature in C (validated)
+    uint32_t _temp_readtime_ms;             // system time we last read a validated temperature, 0 if never read
     uint8_t _checksum;                      // checksum accumulator
     bool _term_is_checksum;                 // current term is the checksum
     sentence_types _sentence_type;          // the sentence type currently being processed
+    bool _sentence_done;                    // true if this sentence has already been decoded
 };

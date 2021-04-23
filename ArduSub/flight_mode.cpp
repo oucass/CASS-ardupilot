@@ -10,7 +10,6 @@ bool Sub::set_mode(control_mode_t mode, ModeReason reason)
     // return immediately if we are already in the desired mode
     if (mode == control_mode) {
         prev_control_mode = control_mode;
-        prev_control_mode_reason = control_mode_reason;
 
         control_mode_reason = reason;
         return true;
@@ -70,7 +69,6 @@ bool Sub::set_mode(control_mode_t mode, ModeReason reason)
         exit_mode(control_mode, mode);
 
         prev_control_mode = control_mode;
-        prev_control_mode_reason = control_mode_reason;
 
         control_mode = mode;
         control_mode_reason = reason;
@@ -165,9 +163,9 @@ void Sub::exit_mode(control_mode_t old_control_mode, control_mode_t new_control_
         if (mission.state() == AP_Mission::MISSION_RUNNING) {
             mission.stop();
         }
-#if MOUNT == ENABLED
+#if HAL_MOUNT_ENABLED
         camera_mount.set_mode_to_default();
-#endif  // MOUNT == ENABLED
+#endif  // HAL_MOUNT_ENABLED
     }
 }
 

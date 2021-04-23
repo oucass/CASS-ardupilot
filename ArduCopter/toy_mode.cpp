@@ -216,7 +216,7 @@ void ToyMode::update()
             
     // set ALT_HOLD as indoors for the EKF (disables GPS vertical velocity fusion)
 #if 0
-    copter.ahrs.set_indoor_mode(copter.control_mode == ALT_HOLD || copter.control_mode == FLOWHOLD);
+    copter.ahrs.set_indoor_mode(copter.flightmode->mode_number() == ALT_HOLD || copter.flightmode->mode_number() == FLOWHOLD);
 #endif
     
     bool left_button = false;
@@ -410,7 +410,7 @@ void ToyMode::update()
         const uint8_t disarm_limit = copter.flightmode->has_manual_throttle()?TOY_LAND_MANUAL_DISARM_COUNT:TOY_LAND_DISARM_COUNT;
         if (throttle_low_counter >= disarm_limit) {
             gcs().send_text(MAV_SEVERITY_INFO, "Tmode: throttle disarm");
-            copter.arming.disarm();
+            copter.arming.disarm(AP_Arming::Method::TOYMODELANDTHROTTLE);
         }
     } else {
         throttle_low_counter = 0;
@@ -424,7 +424,7 @@ void ToyMode::update()
         if (throttle_high_counter >= TOY_LAND_ARM_COUNT) {
             gcs().send_text(MAV_SEVERITY_INFO, "Tmode: throttle arm");
             arm_check_compass();
-            if (!copter.arming.arm(AP_Arming::Method::MAVLINK) && (flags & FLAG_UPGRADE_LOITER) && copter.control_mode == Mode::Number::LOITER) {
+            if (!copter.arming.arm(AP_Arming::Method::MAVLINK) && (flags & FLAG_UPGRADE_LOITER) && copter.flightmode->mode_number() == Mode::Number::LOITER) {
                 /*
                   support auto-switching to ALT_HOLD, then upgrade to LOITER once GPS available
                  */
@@ -453,7 +453,7 @@ void ToyMode::update()
     }
 
     if (upgrade_to_loiter) {
-        if (!copter.motors->armed() || copter.control_mode != Mode::Number::ALT_HOLD) {
+        if (!copter.motors->armed() || copter.flightmode->mode_number() != Mode::Number::ALT_HOLD) {
             upgrade_to_loiter = false;
 #if 0
             AP_Notify::flags.hybrid_loiter = false;
@@ -466,12 +466,12 @@ void ToyMode::update()
         }
     }
 
-    if (copter.control_mode == Mode::Number::RTL && (flags & FLAG_RTL_CANCEL) && throttle_near_max) {
+    if (copter.flightmode->mode_number() == Mode::Number::RTL && (flags & FLAG_RTL_CANCEL) && throttle_near_max) {
         gcs().send_text(MAV_SEVERITY_INFO, "Tmode: RTL cancel");        
         set_and_remember_mode(Mode::Number::LOITER, ModeReason::TOY_MODE);
     }
     
-    enum Mode::Number old_mode = copter.control_mode;
+    enum Mode::Number old_mode = copter.flightmode->mode_number();
     enum Mode::Number new_mode = old_mode;
 
     /*
@@ -569,7 +569,7 @@ void ToyMode::update()
     case ACTION_DISARM:
         if (copter.motors->armed()) {
             gcs().send_text(MAV_SEVERITY_ERROR, "Tmode: Force disarm");
-            copter.arming.disarm();
+            copter.arming.disarm(AP_Arming::Method::TOYMODELANDFORCE);
         }
         break;
 
@@ -579,11 +579,11 @@ void ToyMode::update()
         break;
 
     case ACTION_TOGGLE_SIMPLE:
-        copter.set_simple_mode(copter.ap.simple_mode?0:1);
+        copter.set_simple_mode(bool(copter.simple_mode)?Copter::SimpleMode::NONE:Copter::SimpleMode::SIMPLE);
         break;
 
     case ACTION_TOGGLE_SSIMPLE:
-        copter.set_simple_mode(copter.ap.simple_mode?0:2);
+        copter.set_simple_mode(bool(copter.simple_mode)?Copter::SimpleMode::NONE:Copter::SimpleMode::SUPERSIMPLE);
         break;
         
     case ACTION_ARM_LAND_RTL:
@@ -636,12 +636,12 @@ void ToyMode::update()
         break;
     }
 
-    if (!copter.motors->armed() && (copter.control_mode == Mode::Number::LAND || copter.control_mode == Mode::Number::RTL)) {
+    if (!copter.motors->armed() && (copter.flightmode->mode_number() == Mode::Number::LAND || copter.flightmode->mode_number() == Mode::Number::RTL)) {
         // revert back to last primary flight mode if disarmed after landing
         new_mode = Mode::Number(primary_mode[last_mode_choice].get());
     }
     
-    if (new_mode != copter.control_mode) {
+    if (new_mode != copter.flightmode->mode_number()) {
         load_test.running = false;
 #if AC_FENCE == ENABLED
         copter.fence.enable(false);
@@ -676,7 +676,7 @@ void ToyMode::update()
  */
 bool ToyMode::set_and_remember_mode(Mode::Number mode, ModeReason reason)
 {
-    if (copter.control_mode == mode) {
+    if (copter.flightmode->mode_number() == mode) {
         return true;
     }
     if (!copter.set_mode(mode, reason)) {
@@ -907,15 +907,15 @@ void ToyMode::blink_update(void)
     if (copter.motors->armed() && AP_Notify::flags.failsafe_battery) {
         pattern = BLINK_8;
     } else if (!copter.motors->armed() && (blink_disarm > 0)) {
-		pattern = BLINK_8;
-		blink_disarm--;
-	} else {
+        pattern = BLINK_8;
+        blink_disarm--;
+    } else {
         pattern = BLINK_FULL;
     }
     
     if (copter.motors->armed()) {
-		blink_disarm = 4;
-	}
+        blink_disarm = 4;
+    }
     
     if (red_blink_count == 0) {
         red_blink_pattern = pattern;
@@ -990,6 +990,17 @@ void ToyMode::thrust_limiting(float *thrust, uint8_t num_motors)
     }
     uint16_t pwm[4];
     hal.rcout->read(pwm, 4);
+
+// @LoggerMessage: THST
+// @Description: Maximum thrust limitation based on battery voltage in Toy Mode
+// @Field: TimeUS: Time since system startup
+// @Field: Vol: Filtered battery voltage
+// @Field: Mul: Thrust multiplier between 0 and 1 to limit the output thrust based on battery voltage
+// @Field: M1: Motor 1 pwm output
+// @Field: M2: Motor 2 pwm output
+// @Field: M3: Motor 3 pwm output
+// @Field: M4: Motor 4 pwm output
+
     if (motor_log_counter++ % 10 == 0) {
         AP::logger().Write("THST", "TimeUS,Vol,Mul,M1,M2,M3,M4", "QffHHHH",
                                                AP_HAL::micros64(),
@@ -1063,9 +1074,10 @@ void ToyMode::arm_check_compass(void)
     Vector3f offsets = copter.compass.get_offsets();
     float field = copter.compass.get_field().length();
     
+    char unused_compass_configured_error_message[20];
     if (offsets.length() > copter.compass.get_offsets_max() ||
         field < 200 || field > 800 ||
-        !copter.compass.configured()) {
+        !copter.compass.configured(unused_compass_configured_error_message, ARRAY_SIZE(unused_compass_configured_error_message))) {
         if (copter.compass.get_learn_type() != Compass::LEARN_INFLIGHT) {
             gcs().send_text(MAV_SEVERITY_INFO, "Tmode: enable compass learning");
             copter.compass.set_learn_type(Compass::LEARN_INFLIGHT, false);

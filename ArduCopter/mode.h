@@ -21,7 +21,7 @@ public:
         RTL =           6,  // automatic return to launching point
         CIRCLE =        7,  // automatic circular flight with automatic throttle
         LAND =          9,  // automatic landing with horizontal position control
-        DRIFT =        11,  // semi-automous position, yaw and throttle control
+        DRIFT =        11,  // semi-autonomous position, yaw and throttle control
         SPORT =        13,  // manual earth-frame angular rate control with manual throttle
         FLIP =         14,  // automatically flip the vehicle on the roll axis
         AUTOTUNE =     15,  // automatically tune the vehicle's roll and pitch gains
@@ -45,6 +45,9 @@ public:
     Mode(const Mode &other) = delete;
     Mode &operator=(const Mode&) = delete;
 
+    // returns a unique number specific to this mode
+    virtual Number mode_number() const = 0;
+
     // child classes should override these methods
     virtual bool init(bool ignore_checks) {
         return true;
@@ -52,11 +55,14 @@ public:
     virtual void run() = 0;
     virtual bool requires_GPS() const = 0;
     virtual bool has_manual_throttle() const = 0;
-    virtual bool allows_arming(bool from_gcs) const = 0;
+    virtual bool allows_arming(AP_Arming::Method method) const = 0;
     virtual bool is_autopilot() const { return false; }
     virtual bool has_user_takeoff(bool must_navigate) const { return false; }
     virtual bool in_guided_mode() const { return false; }
     virtual bool logs_attitude() const { return false; }
+    virtual bool allows_save_trim() const { return false; }
+    virtual bool allows_autotune() const { return false; }
+    virtual bool allows_flip() const { return false; }
 
     // return a string for this flightmode
     virtual const char *name() const = 0;
@@ -66,16 +72,16 @@ public:
     virtual bool is_taking_off() const;
     static void takeoff_stop() { takeoff.stop(); }
 
-    virtual bool landing_gear_should_be_deployed() const { return false; }
     virtual bool is_landing() const { return false; }
+
+    // mode requires terrain to be present to be functional
+    virtual bool requires_terrain_failsafe() const { return false; }
 
     // functions for reporting to GCS
     virtual bool get_wp(Location &loc) { return false; };
     virtual int32_t wp_bearing() const { return 0; }
     virtual uint32_t wp_distance() const { return 0; }
     virtual float crosstrack_error() const { return 0.0f;}
-
-    void update_navigation();
 
     int32_t get_alt_above_ground_cm(void);
 
@@ -84,6 +90,10 @@ public:
     float get_pilot_desired_yaw_rate(int16_t stick_angle);
     float get_pilot_desired_throttle() const;
 
+    // returns climb target_rate reduced to avoid obstacles and
+    // altitude fence
+    float get_avoidance_adjusted_climbrate(float target_rate);
+
     const Vector3f& get_desired_velocity() {
         // note that position control isn't used in every mode, so
         // this may return bogus data:
@@ -91,9 +101,6 @@ public:
     }
 
 protected:
-
-    // navigation support functions
-    virtual void run_autopilot() {}
 
     // helper functions
     bool is_disarmed_or_landed() const;
@@ -169,8 +176,9 @@ protected:
     // waypoint navigation but the user can control the yaw.
     void auto_takeoff_run();
     void auto_takeoff_set_start_alt(void);
-    void auto_takeoff_attitude_run(float target_yaw_rate);
-    // altitude below which we do no navigation in auto takeoff
+
+    // altitude above-ekf-origin below which auto takeoff does not control horizontal position
+    static bool auto_takeoff_no_nav_active;
     static float auto_takeoff_no_nav_alt_cm;
 
 public:
@@ -203,7 +211,7 @@ public:
     private:
 
         float look_ahead_yaw();
-        float roi_yaw();
+        float roi_yaw() const;
         float turn_into_wind(); // CASS: wind messanger to autopilot
         float turn_into_wind_CT2(); // CASS: vector difference between wind and displacement vectors
 
@@ -217,9 +225,6 @@ public:
         // Yaw will point at this location if mode is set to AUTO_YAW_ROI
         Vector3f roi;
 
-        // bearing from current location to the ROI
-        float _roi_yaw;
-
         // yaw used for YAW_FIXED yaw_mode
         int32_t _fixed_yaw;
 
@@ -231,10 +236,6 @@ public:
 
         // turn rate (in cds) when auto_yaw_mode is set to AUTO_YAW_RATE
         float _rate_cds;
-
-        // used to reduce update rate to 100hz:
-        uint8_t roi_yaw_counter;
-
     };
     static AutoYaw auto_yaw;
 
@@ -248,7 +249,6 @@ public:
     void set_land_complete(bool b);
     GCS_Copter &gcs();
     void set_throttle_takeoff(void);
-    float get_avoidance_adjusted_climbrate(float target_rate);
     uint16_t get_pilot_speed_dn(void);
 
     // end pass-through functions
@@ -261,6 +261,7 @@ class ModeAcro : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::ACRO; }
 
     enum class Trainer {
         OFF = 0,
@@ -268,12 +269,23 @@ public:
         LIMITED = 2,
     };
 
+    enum class AcroOptions {
+        AIR_MODE = 1 << 0,
+        RATE_LOOP_ONLY = 1 << 1,
+    };
+
     virtual void run() override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return true; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
+    bool init(bool ignore_checks) override;
+    void exit();
+    // whether an air-mode aux switch has been toggled
+    void air_mode_aux_changed();
+    bool allows_save_trim() const override { return true; }
+    bool allows_flip() const override { return true; }
 
 protected:
 
@@ -285,7 +297,7 @@ protected:
     float throttle_hover() const override;
 
 private:
-
+    bool disable_air_mode_reset;
 };
 #endif
 
@@ -311,17 +323,20 @@ class ModeAltHold : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::ALT_HOLD; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
     bool has_user_takeoff(bool must_navigate) const override {
         return !must_navigate;
     }
+    bool allows_autotune() const override { return true; }
+    bool allows_flip() const override { return true; }
 
 protected:
 
@@ -338,13 +353,14 @@ class ModeAuto : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::AUTO; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; };
+    bool allows_arming(AP_Arming::Method method) const override;
     bool is_autopilot() const override { return true; }
     bool in_guided_mode() const override { return mode() == Auto_NavGuided; }
 
@@ -354,20 +370,18 @@ public:
     bool loiter_start();
     void rtl_start();
     void takeoff_start(const Location& dest_loc);
-    void wp_start(const Vector3f& destination, bool terrain_alt);
     void wp_start(const Location& dest_loc);
     void land_start();
     void land_start(const Vector3f& destination);
     void circle_movetoedge_start(const Location &circle_center, float radius_m);
     void circle_start();
-    void spline_start(const Vector3f& destination, bool stopped_at_start, AC_WPNav::spline_segment_end_type seg_end_type, const Vector3f& next_spline_destination);
-    void spline_start(const Location& destination, bool stopped_at_start, AC_WPNav::spline_segment_end_type seg_end_type, const Location& next_destination);
     void nav_guided_start();
 
     bool is_landing() const override;
-    bool landing_gear_should_be_deployed() const override;
 
     bool is_taking_off() const override;
+
+    bool requires_terrain_failsafe() const override { return true; }
 
     // return true if this flight mode supports user takeoff
     //  must_nagivate is true if mode must also control horizontal position
@@ -392,17 +406,25 @@ protected:
     int32_t wp_bearing() const override;
     float crosstrack_error() const override { return wp_nav->crosstrack_error();}
     bool get_wp(Location &loc) override;
-    void run_autopilot() override;
 
 private:
+
+    enum class Options : int32_t {
+        AllowArming                        = (1 << 0U),
+        AllowTakeOffWithoutRaisingThrottle = (1 << 1U),
+        IgnorePilotYaw                     = (1 << 2U),
+    };
+
+    bool use_pilot_yaw(void) const;
 
     bool start_command(const AP_Mission::Mission_Command& cmd);
     bool verify_command(const AP_Mission::Mission_Command& cmd);
     void exit_mission();
 
+    bool check_for_mission_change();    // detect external changes to mission
+
     void takeoff_run();
     void wp_run();
-    void spline_run();
     void land_run();
     void rtl_run();
     void circle_run();
@@ -410,7 +432,7 @@ private:
     void loiter_run();
     void loiter_to_alt_run();
 
-    Location loc_from_cmd(const AP_Mission::Mission_Command& cmd) const;
+    Location loc_from_cmd(const AP_Mission::Mission_Command& cmd, const Location& default_loc) const;
 
     void payload_place_start(const Vector3f& destination);
     void payload_place_run();
@@ -425,12 +447,14 @@ private:
 
     void do_takeoff(const AP_Mission::Mission_Command& cmd);
     void do_nav_wp(const AP_Mission::Mission_Command& cmd);
+    bool set_next_wp(const AP_Mission::Mission_Command& current_cmd, const Location &default_loc);
     void do_land(const AP_Mission::Mission_Command& cmd);
     void do_loiter_unlimited(const AP_Mission::Mission_Command& cmd);
     void do_circle(const AP_Mission::Mission_Command& cmd);
     void do_loiter_time(const AP_Mission::Mission_Command& cmd);
     void do_loiter_to_alt(const AP_Mission::Mission_Command& cmd);
     void do_spline_wp(const AP_Mission::Mission_Command& cmd);
+    void get_spline_from_cmd(const AP_Mission::Mission_Command& cmd, const Location& default_loc, Location& dest_loc, Location& next_dest_loc, bool& next_dest_loc_is_spline);
 #if NAV_GUIDED == ENABLED
     void do_nav_guided_enable(const AP_Mission::Mission_Command& cmd);
     void do_guided_limits(const AP_Mission::Mission_Command& cmd);
@@ -457,7 +481,7 @@ private:
     bool verify_payload_place();
     bool verify_loiter_unlimited();
     bool verify_loiter_time(const AP_Mission::Mission_Command& cmd);
-    bool verify_loiter_to_alt();
+    bool verify_loiter_to_alt() const;
     bool verify_RTL();
     bool verify_wait_delay();
     bool verify_within_distance();
@@ -506,6 +530,17 @@ private:
         float descend_start_altitude;
         float descend_max; // centimetres
     } nav_payload_place;
+
+    bool waiting_to_start;  // true if waiting for vehicle to be armed or EKF origin before starting mission
+
+    // variables to detect mission changes
+    static const uint8_t mis_change_detect_cmd_max = 3;
+    struct {
+        uint32_t last_change_time_ms;       // local copy of last time mission was changed
+        uint16_t curr_cmd_index;            // local copy of AP_Mission's current command index
+        uint8_t cmd_count;                  // number of commands in the cmd array
+        AP_Mission::Mission_Command cmd[mis_change_detect_cmd_max]; // local copy of the next few mission commands
+    } mis_change_detect = {};
 };
 
 #if AUTOTUNE_ENABLED == ENABLED
@@ -529,16 +564,20 @@ protected:
 
 class ModeAutoTune : public Mode {
 
+    // ParametersG2 sets a pointer within our autotune object:
+    friend class ParametersG2;
+
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::AUTOTUNE; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; }
+    bool allows_arming(AP_Arming::Method method) const override { return false; }
     bool is_autopilot() const override { return false; }
 
     void save_tuning_gains();
@@ -549,6 +588,11 @@ protected:
 
     const char *name() const override { return "AUTOTUNE"; }
     const char *name4() const override { return "ATUN"; }
+
+private:
+
+    AutoTune autotune;
+
 };
 #endif
 
@@ -558,13 +602,14 @@ class ModeBrake : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::BRAKE; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; };
+    bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return false; }
 
     void timeout_to_loiter_ms(uint32_t timeout_ms);
@@ -589,13 +634,14 @@ class ModeCircle : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::CIRCLE; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; };
+    bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return true; }
 
 protected:
@@ -610,6 +656,7 @@ private:
 
     // Circle
     bool pilot_yaw_override = false; // true if pilot is overriding yaw
+    bool speed_changing = false;     // true when the roll stick is being held to facilitate stopping at 0 rate
 };
 
 
@@ -618,13 +665,14 @@ class ModeDrift : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::DRIFT; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
 
 protected:
@@ -644,13 +692,14 @@ class ModeFlip : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::FLIP; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; };
+    bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return false; }
 
 protected:
@@ -689,17 +738,19 @@ class ModeFlowHold : public Mode {
 public:
     // need a constructor for parameters
     ModeFlowHold(void);
+    Number mode_number() const override { return Number::FLOWHOLD; }
 
     bool init(bool ignore_checks) override;
     void run(void) override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
     bool has_user_takeoff(bool must_navigate) const override {
         return !must_navigate;
     }
+    bool allows_flip() const override { return true; }
 
     static const struct AP_Param::GroupInfo var_info[];
 
@@ -771,23 +822,29 @@ class ModeGuided : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::GUIDED; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return from_gcs; }
+    bool allows_arming(AP_Arming::Method method) const override;
     bool is_autopilot() const override { return true; }
     bool has_user_takeoff(bool must_navigate) const override { return true; }
     bool in_guided_mode() const override { return true; }
 
-    void set_angle(const Quaternion &q, float climb_rate_cms, bool use_yaw_rate, float yaw_rate_rads);
-    bool set_destination(const Vector3f& destination, bool use_yaw = false, float yaw_cd = 0.0, bool use_yaw_rate = false, float yaw_rate_cds = 0.0, bool yaw_relative = false);
+    bool requires_terrain_failsafe() const override { return true; }
+
+    void set_angle(const Quaternion &q, float climb_rate_cms_or_thrust, bool use_yaw_rate, float yaw_rate_rads, bool use_thrust);
+    bool set_destination(const Vector3f& destination, bool use_yaw = false, float yaw_cd = 0.0, bool use_yaw_rate = false, float yaw_rate_cds = 0.0, bool yaw_relative = false, bool terrain_alt = false);
     bool set_destination(const Location& dest_loc, bool use_yaw = false, float yaw_cd = 0.0, bool use_yaw_rate = false, float yaw_rate_cds = 0.0, bool yaw_relative = false);
     bool get_wp(Location &loc) override;
     void set_velocity(const Vector3f& velocity, bool use_yaw = false, float yaw_cd = 0.0, bool use_yaw_rate = false, float yaw_rate_cds = 0.0, bool yaw_relative = false, bool log_request = true);
     bool set_destination_posvel(const Vector3f& destination, const Vector3f& velocity, bool use_yaw = false, float yaw_cd = 0.0, bool use_yaw_rate = false, float yaw_rate_cds = 0.0, bool yaw_relative = false);
+
+    // returns true if GUIDED_OPTIONS param suggests SET_ATTITUDE_TARGET's "thrust" field should be interpreted as thrust instead of climb rate
+    bool set_attitude_target_provides_thrust() const;
 
     void limit_clear();
     void limit_init_time_and_pos();
@@ -796,9 +853,17 @@ public:
 
     bool is_taking_off() const override;
 
-    bool do_user_takeoff_start(float final_alt_above_home) override;
+    bool do_user_takeoff_start(float takeoff_alt_cm) override;
 
-    GuidedMode mode() const { return guided_mode; }
+    enum class SubMode {
+        TakeOff,
+        WP,
+        Velocity,
+        PosVel,
+        Angle,
+    };
+
+    SubMode submode() const { return guided_mode; }
 
     void angle_control_start();
     void angle_control_run();
@@ -814,6 +879,14 @@ protected:
 
 private:
 
+    // enum for GUID_OPTIONS parameter
+    enum class Options : int32_t {
+        AllowArmingFromTX = (1U << 0),
+        // this bit is still available, pilot yaw was mapped to bit 2 for symmetry with auto
+        IgnorePilotYaw    = (1U << 2),
+        SetAttitudeTarget_ThrustAsThrust = (1U << 3),
+    };
+
     void pos_control_start();
     void vel_control_start();
     void posvel_control_start();
@@ -823,9 +896,11 @@ private:
     void posvel_control_run();
     void set_desired_velocity_with_accel_and_fence_limits(const Vector3f& vel_des);
     void set_yaw_state(bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_angle);
+    bool use_pilot_yaw(void) const;
 
     // controls which controller is run (pos or vel):
-    GuidedMode guided_mode = Guided_TakeOff;
+    SubMode guided_mode = SubMode::TakeOff;
+    bool send_notification;     // used to send one time notification to ground station
 
 };
 
@@ -835,13 +910,13 @@ class ModeGuidedNoGPS : public ModeGuided {
 public:
     // inherit constructor
     using ModeGuided::Mode;
+    Number mode_number() const override { return Number::GUIDED_NOGPS; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return from_gcs; }
     bool is_autopilot() const override { return true; }
 
 protected:
@@ -859,19 +934,24 @@ class ModeLand : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::LAND; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; };
+    bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return true; }
 
     bool is_landing() const override { return true; };
-    bool landing_gear_should_be_deployed() const override { return true; };
 
     void do_not_use_GPS();
+
+    // returns true if LAND mode is trying to control X/Y position
+    bool controlling_position() const { return control_position; }
+
+    void set_land_pause(bool new_value) { land_pause = new_value; }
 
 protected:
 
@@ -882,6 +962,11 @@ private:
 
     void gps_run();
     void nogps_run();
+
+    bool control_position; // true if we are using an external reference to control position
+
+    uint32_t land_start_time;
+    bool land_pause;
 };
 
 
@@ -890,15 +975,17 @@ class ModeLoiter : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::LOITER; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
     bool has_user_takeoff(bool must_navigate) const override { return true; }
+    bool allows_autotune() const override { return true; }
 
 #if PRECISION_LANDING == ENABLED
     void set_precision_loiter_enabled(bool value) { _precision_loiter_enabled = value; }
@@ -931,15 +1018,17 @@ class ModePosHold : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::POSHOLD; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
     bool has_user_takeoff(bool must_navigate) const override { return true; }
+    bool allows_autotune() const override { return true; }
 
 protected:
 
@@ -951,6 +1040,7 @@ private:
     void update_pilot_lean_angle(float &lean_angle_filtered, float &lean_angle_raw);
     float mix_controls(float mix_ratio, float first_control, float second_control);
     void update_brake_angle_from_velocity(float &brake_angle, float velocity);
+    void init_wind_comp_estimate();
     void update_wind_comp_estimate();
     void get_wind_comp_lean_angles(float &roll_angle, float &pitch_angle);
     void roll_controller_to_pilot_override();
@@ -968,22 +1058,24 @@ private:
     RPMode roll_mode;
     RPMode pitch_mode;
 
-    uint8_t braking_time_updated_roll   : 1;    // true once we have re-estimated the braking time.  This is done once as the vehicle begins to flatten out after braking
-    uint8_t braking_time_updated_pitch  : 1;    // true once we have re-estimated the braking time.  This is done once as the vehicle begins to flatten out after braking
-
     // pilot input related variables
     float pilot_roll;                         // pilot requested roll angle (filtered to slow returns to zero)
     float pilot_pitch;                        // pilot requested roll angle (filtered to slow returns to zero)
 
     // braking related variables
-    float brake_gain;                           // gain used during conversion of vehicle's velocity to lean angle during braking (calculated from brake_rate)
-    float brake_roll;                           // target roll angle during braking periods
-    float brake_pitch;                          // target pitch angle during braking periods
-    int16_t brake_timeout_roll;                 // number of cycles allowed for the braking to complete, this timeout will be updated at half-braking
-    int16_t brake_timeout_pitch;                // number of cycles allowed for the braking to complete, this timeout will be updated at half-braking
-    float brake_angle_max_roll;                 // maximum lean angle achieved during braking.  Used to determine when the vehicle has begun to flatten out so that we can re-estimate the braking time
-    float brake_angle_max_pitch;                // maximum lean angle achieved during braking  Used to determine when the vehicle has begun to flatten out so that we can re-estimate the braking time
-    int16_t brake_to_loiter_timer;              // cycles to mix brake and loiter controls in POSHOLD_BRAKE_TO_LOITER
+    struct {
+        uint8_t time_updated_roll   : 1;    // true once we have re-estimated the braking time.  This is done once as the vehicle begins to flatten out after braking
+        uint8_t time_updated_pitch  : 1;    // true once we have re-estimated the braking time.  This is done once as the vehicle begins to flatten out after braking
+
+        float gain;                         // gain used during conversion of vehicle's velocity to lean angle during braking (calculated from rate)
+        float roll;                         // target roll angle during braking periods
+        float pitch;                        // target pitch angle during braking periods
+        int16_t timeout_roll;               // number of cycles allowed for the braking to complete, this timeout will be updated at half-braking
+        int16_t timeout_pitch;              // number of cycles allowed for the braking to complete, this timeout will be updated at half-braking
+        float angle_max_roll;               // maximum lean angle achieved during braking.  Used to determine when the vehicle has begun to flatten out so that we can re-estimate the braking time
+        float angle_max_pitch;              // maximum lean angle achieved during braking  Used to determine when the vehicle has begun to flatten out so that we can re-estimate the braking time
+        int16_t to_loiter_timer;            // cycles to mix brake and loiter controls in POSHOLD_TO_LOITER
+    } brake;
 
     // loiter related variables
     int16_t controller_to_pilot_timer_roll;     // cycles to mix controller and pilot controls in POSHOLD_CONTROLLER_TO_PILOT
@@ -1010,6 +1102,7 @@ class ModeRTL : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::RTL; }
 
     bool init(bool ignore_checks) override;
     void run() override {
@@ -1019,21 +1112,38 @@ public:
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; };
+    bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return true; }
+
+    bool requires_terrain_failsafe() const override { return true; }
 
     // for reporting to GCS
     bool get_wp(Location &loc) override;
 
+    // RTL states
+    enum RTLState {
+        RTL_Starting,
+        RTL_InitialClimb,
+        RTL_ReturnHome,
+        RTL_LoiterAtHome,
+        RTL_FinalDescent,
+        RTL_Land
+    };
     RTLState state() { return _state; }
 
     // this should probably not be exposed
-    bool state_complete() { return _state_complete; }
+    bool state_complete() const { return _state_complete; }
 
-    bool is_landing() const override;
-    bool landing_gear_should_be_deployed() const override;
+    virtual bool is_landing() const override;
 
     void restart_without_terrain();
+
+    // enum for RTL_ALT_TYPE parameter
+    enum class RTLAltType {
+        RTL_ALTTYPE_RELATIVE = 0,
+        RTL_ALTTYPE_TERRAIN = 1
+    };
+    ModeRTL::RTLAltType get_alt_type() const;
 
 protected:
 
@@ -1072,13 +1182,28 @@ private:
         Location return_target;
         Location descent_target;
         bool land;
-        bool terrain_used;
     } rtl_path;
+
+    // return target alt type
+    enum class ReturnTargetAltType {
+        RELATIVE = 0,
+        RANGEFINDER = 1,
+        TERRAINDATABASE = 2
+    };
 
     // Loiter timer - Records how long we have been in loiter
     uint32_t _loiter_start_time;
 
     bool terrain_following_allowed;
+
+    // enum for RTL_OPTIONS parameter
+    enum class Options : int32_t {
+        // First pair of bits are still available, pilot yaw was mapped to bit 2 for symmetry with auto
+        IgnorePilotYaw    = (1U << 2),
+    };
+
+    bool use_pilot_yaw(void) const;
+
 };
 
 
@@ -1087,17 +1212,20 @@ class ModeSmartRTL : public ModeRTL {
 public:
     // inherit constructor
     using ModeRTL::Mode;
+    Number mode_number() const override { return Number::SMART_RTL; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; }
+    bool allows_arming(AP_Arming::Method method) const override { return false; }
     bool is_autopilot() const override { return true; }
 
     void save_position();
     void exit();
+
+    bool is_landing() const override;
 
 protected:
 
@@ -1118,6 +1246,10 @@ private:
     void land();
     SmartRTLState smart_rtl_state = SmartRTL_PathFollow;
 
+    // keep track of how long we have failed to get another return
+    // point while following our path home.  If we take too long we
+    // may choose to land the vehicle.
+    uint32_t path_follow_last_pop_fail_ms;
 };
 
 
@@ -1126,13 +1258,14 @@ class ModeSport : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::SPORT; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
     bool has_user_takeoff(bool must_navigate) const override {
         return !must_navigate;
@@ -1153,13 +1286,17 @@ class ModeStabilize : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::STABILIZE; }
 
     virtual void run() override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return true; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
+    bool allows_save_trim() const override { return true; }
+    bool allows_autotune() const override { return true; }
+    bool allows_flip() const override { return true; }
 
 protected:
 
@@ -1191,15 +1328,17 @@ class ModeSystemId : public Mode {
 
 public:
     ModeSystemId(void);
+    Number mode_number() const override { return Number::SYSTEMID; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
-    bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool requires_GPS() const override { return false; }
+    bool has_manual_throttle() const override { return true; }
+    bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return false; }
     bool logs_attitude() const override { return true; }
+
     void set_magnitude(float input) { waveform_magnitude = input; }
 
     static const struct AP_Param::GroupInfo var_info[];
@@ -1211,7 +1350,7 @@ protected:
 
 private:
 
-    void log_data();
+    void log_data() const;
     float waveform(float time);
 
     enum class AxisType {
@@ -1258,19 +1397,25 @@ class ModeThrow : public Mode {
 public:
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::THROW; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return true; };
+    bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
 
     // Throw types
-    enum ThrowModeType {
-        ThrowType_Upward = 0,
-        ThrowType_Drop = 1
+    enum class ThrowType {
+        Upward = 0,
+        Drop = 1
+    };
+
+    enum class PreThrowMotorState {
+        STOPPED = 0,
+        RUNNING = 1,
     };
 
 protected:
@@ -1309,13 +1454,14 @@ class ModeAvoidADSB : public ModeGuided {
 public:
     // inherit constructor
     using ModeGuided::Mode;
+    Number mode_number() const override { return Number::AVOID_ADSB; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; }
+    bool allows_arming(AP_Arming::Method method) const override { return false; }
     bool is_autopilot() const override { return true; }
 
     bool set_velocity(const Vector3f& velocity_neu);
@@ -1335,6 +1481,7 @@ public:
 
     // inherit constructor
     using ModeGuided::Mode;
+    Number mode_number() const override { return Number::FOLLOW; }
 
     bool init(bool ignore_checks) override;
     void exit();
@@ -1342,7 +1489,7 @@ public:
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; }
+    bool allows_arming(AP_Arming::Method method) const override { return false; }
     bool is_autopilot() const override { return true; }
 
 protected:
@@ -1361,23 +1508,45 @@ protected:
 class ModeZigZag : public Mode {        
 
 public:
+    ModeZigZag(void);
 
     // Inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::ZIGZAG; }
+
+    enum class Destination : uint8_t {
+        A,  // Destination A
+        B,  // Destination B
+    };
+
+    enum class Direction : uint8_t {
+        FORWARD,        // moving forward from the yaw direction
+        RIGHT,          // moving right from the yaw direction
+        BACKWARD,       // moving backward from the yaw direction
+        LEFT,           // moving left from the yaw direction
+    } zigzag_direction;
 
     bool init(bool ignore_checks) override;
+    void exit();
     void run() override;
+
+    // auto control methods.  copter flies grid pattern
+    void run_auto();
+    void suspend_auto();
+    void init_auto();
 
     bool requires_GPS() const override { return true; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; }
+    bool allows_arming(AP_Arming::Method method) const override { return true; }
     bool is_autopilot() const override { return true; }
 
-    // save current position as A (dest_num = 0) or B (dest_num = 1).  If both A and B have been saved move to the one specified
-    void save_or_move_to_destination(uint8_t dest_num);
+    // save current position as A or B.  If both A and B have been saved move to the one specified
+    void save_or_move_to_destination(Destination ab_dest);
 
     // return manual control to the pilot
     void return_to_manual_control(bool maintain_target);
+
+    static const struct AP_Param::GroupInfo var_info[];
 
 protected:
 
@@ -1389,18 +1558,44 @@ private:
     void auto_control();
     void manual_control();
     bool reached_destination();
-    bool calculate_next_dest(uint8_t position_num, bool use_wpnav_alt, Vector3f& next_dest, bool& terrain_alt) const;
+    bool calculate_next_dest(Destination ab_dest, bool use_wpnav_alt, Vector3f& next_dest, bool& terrain_alt) const;
+    void spray(bool b);
+    bool calculate_side_dest(Vector3f& next_dest, bool& terrain_alt) const;
+    void move_to_side();
 
     Vector2f dest_A;    // in NEU frame in cm relative to ekf origin
     Vector2f dest_B;    // in NEU frame in cm relative to ekf origin
+    Vector3f current_dest; // current target destination (use for resume after suspending)
+    bool current_terr_alt;
 
-    enum zigzag_state {
+    // parameters
+    AP_Int8  _auto_enabled;    // top level enable/disable control
+#if SPRAYER_ENABLED == ENABLED
+    AP_Int8  _spray_enabled;   // auto spray enable/disable
+#endif
+    AP_Int8  _wp_delay;        // delay for zigzag waypoint
+    AP_Float _side_dist;       // sideways distance
+    AP_Int8  _direction;       // sideways direction
+    AP_Int16 _line_num;        // total number of lines
+
+    enum ZigZagState {
         STORING_POINTS, // storing points A and B, pilot has manual control
         AUTO,           // after A and B defined, pilot toggle the switch from one side to the other, vehicle flies autonomously
         MANUAL_REGAIN   // pilot toggle the switch to middle position, has manual control
     } stage;
 
+    enum AutoState {
+        MANUAL,         // not in ZigZag Auto
+        AB_MOVING,      // moving from A to B or from B to A
+        SIDEWAYS,       // moving to sideways
+    } auto_stage;
+
     uint32_t reach_wp_time_ms = 0;  // time since vehicle reached destination (or zero if not yet reached)
+    Destination ab_dest_stored;     // store the current destination
+    bool is_auto;                   // enable zigzag auto feature which is automate both AB and sideways
+    uint16_t line_count = 0;        // current line number
+    int16_t line_num = 0;           // target line number
+    bool is_suspended;              // true if zigzag auto is suspended
 };
 
 #if MODE_AUTOROTATE_ENABLED == ENABLED
@@ -1410,6 +1605,7 @@ public:
 
     // inherit constructor
     using Mode::Mode;
+    Number mode_number() const override { return Number::AUTOROTATE; }
 
     bool init(bool ignore_checks) override;
     void run() override;
@@ -1417,7 +1613,7 @@ public:
     bool is_autopilot() const override { return true; }
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
-    bool allows_arming(bool from_gcs) const override { return false; };
+    bool allows_arming(AP_Arming::Method method) const override { return false; };
 
     static const struct AP_Param::GroupInfo  var_info[];
 
@@ -1431,21 +1627,14 @@ private:
     // --- Internal variables ---
     float _initial_rpm;             // Head speed recorded at initiation of flight mode (RPM)
     float _target_head_speed;       // The terget head main rotor head speed.  Normalised by main rotor set point
-    float _fwd_speed_target;        // Target forward speed (cm/s)
     float _desired_v_z;             // Desired vertical
     int32_t _pitch_target;          // Target pitch attitude to pass to attitude controller
-    float _collective_aggression;   // The 'aggresiveness' of collective appliction
-    float _z_touch_down_start;      // The height in cm that the touch down phase began
-    float _t_touch_down_initiate;   // The time in ms that the touch down phase began
-    float now;                      // Current time in millis
-    float _entry_time_start;        // Time remaining until entry phase moves on to glide phase
+    uint32_t _entry_time_start_ms;  // Time remaining until entry phase moves on to glide phase
     float _hs_decay;                // The head accerleration during the entry phase
     float _bail_time;               // Timer for exiting the bail out phase (s)
-    float _bail_time_start;         // Time at start of bail out
-    float _des_z;                   // Desired vertical position
+    uint32_t _bail_time_start_ms;   // Time at start of bail out
     float _target_climb_rate_adjust;// Target vertical acceleration used during bail out phase
     float _target_pitch_adjust;     // Target pitch rate used during bail out phase
-    uint16_t log_counter;           // Used to reduce the data flash logging rate
 
     enum class Autorotation_Phase {
         ENTRY,

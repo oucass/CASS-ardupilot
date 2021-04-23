@@ -67,6 +67,14 @@ const AP_Param::GroupInfo AP_LandingGear::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("RETRACT_ALT", 8, AP_LandingGear, _retract_alt, 0),
 
+    // @Param: OPTIONS
+    // @DisplayName: Landing gear auto retract/deploy options
+    // @Description: Options to retract or deploy landing gear in Auto or Guided mode
+    // @Values: 1:Retract after Takeoff, 2:Deploy during Land, 3:Retract after Takeoff AND deploy during Land
+    // @Bitmask: 0:Retract after Takeoff,1:Deploy during Land
+    // @User: Standard
+    AP_GROUPINFO("OPTIONS", 9, AP_LandingGear, _options, 3),
+
     AP_GROUPEND
 };
 
@@ -131,6 +139,7 @@ void AP_LandingGear::deploy()
     // set deployed flag
     _deployed = true;
     _have_changed = true;
+    AP::logger().Write_Event(LogEvent::LANDING_GEAR_DEPLOYED);
 }
 
 /// retract - retract landing gear
@@ -142,6 +151,7 @@ void AP_LandingGear::retract()
     // reset deployed flag
     _deployed = false;
     _have_changed = true;
+    AP::logger().Write_Event(LogEvent::LANDING_GEAR_RETRACTED);
 
     // send message only if output has been configured
     if (SRV_Channels::function_assigned(SRV_Channel::k_landing_gear_control)) {
@@ -154,7 +164,7 @@ bool AP_LandingGear::deployed()
     if (_pin_deployed == -1) {
         return _deployed;
     } else {
-        return hal.gpio->read(_pin_deployed) == _pin_deployed_polarity ? true : false;
+        return hal.gpio->read(_pin_deployed) == _pin_deployed_polarity;
     }
 }
 
@@ -168,7 +178,7 @@ AP_LandingGear::LG_LandingGear_State AP_LandingGear::get_state()
     return gear_state_current;
 }
 
-uint32_t AP_LandingGear::get_gear_state_duration_ms()
+uint32_t AP_LandingGear::get_gear_state_duration_ms() const
 {
     if (last_gear_event_ms == 0) {
         return 0;
@@ -177,7 +187,7 @@ uint32_t AP_LandingGear::get_gear_state_duration_ms()
     return AP_HAL::millis() - last_gear_event_ms;
 }
 
-uint32_t AP_LandingGear::get_wow_state_duration_ms()
+uint32_t AP_LandingGear::get_wow_state_duration_ms() const
 {
     if (last_wow_event_ms == 0) {
         return 0;
@@ -271,4 +281,20 @@ bool AP_LandingGear::check_before_land(void)
 
     // If the landing gear was not used - return true, otherwise - check for deployed
     return (get_state() == LG_DEPLOYED);
+}
+
+// retract after takeoff if configured via the OPTIONS parameter
+void AP_LandingGear::retract_after_takeoff()
+{
+    if (_options.get() & (uint16_t)Option::RETRACT_AFTER_TAKEOFF) {
+        retract();
+    }
+}
+
+// deploy for landing if configured via the OPTIONS parameter
+void AP_LandingGear::deploy_for_landing()
+{
+    if (_options.get() & (uint16_t)Option::DEPLOY_DURING_LANDING) {
+        deploy();
+    }
 }

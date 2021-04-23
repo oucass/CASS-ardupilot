@@ -65,28 +65,19 @@ protected:
         float weight = 10.5;  // (kg)
         float thrust = 51.48; // (N)
         float thruster_mount_radius = 0.25; // distance in meters from thrusters to center of mass. Used to calculate torque.
-        float equivalent_sphere_radius = 0.25;
-
+        float equivalent_sphere_radius = 0.2;
+        // volume = 4.pi.r³/3
+        float volume = 4 * M_PI * pow(equivalent_sphere_radius, 3) / 3;
+        float density = 500;
+        float mass = volume * density; // 16.75 kg
         // Moment of Inertia (I)(kg.m²) approximated with a sphere with a 25 cm radius (r) and same density as water
         // I = 2.m.r²/5
-        // mass = volume* density
-        // volume = 4.pi.r³/3
-        //                             ,-----------------------------------Mass--------------------.
-        //                             ||------------------------Volume-----------------| |density||
-        float moment_of_inertia =  2 * (4 * M_PI * pow(equivalent_sphere_radius, 3) / 3)  *  1000 * pow(equivalent_sphere_radius, 2) / 5;
-
-        float net_buoyancy = 2.0; // (N)
-
-        float buoyancy_acceleration = GRAVITY_MSS + net_buoyancy/weight;
+        float moment_of_inertia =  2 * (mass * pow(equivalent_sphere_radius, 2) / 5);
 
         // Frame drag coefficient
-        const Vector3f linear_drag_coefficient = Vector3f(0.2, 0.3, 0.4);
+        const Vector3f linear_drag_coefficient = Vector3f(1.4, 1.8, 2.0);
         // Angular drag coefficient CD for a cube is 1.05. This is subject to change based on experimentation.
         const Vector3f angular_drag_coefficient = Vector3f(1.05, 1.05, 1.05);
-        // Calculate total volume from water buoyancy
-        // $ V = F_b / (rho * g) $
-        // V = volume (m^3), rho = water density (kg/m^3), g = gravity (m/s^2), F_b = force (N)
-        float volume = buoyancy_acceleration * weight / (GRAVITY_MSS * 1023.6f);
         // Calculate equivalent sphere area for drag force
         // $ A = pi * r^2 / 4 $
         // $ V = 4 * pi * r^3 / 3 $
@@ -105,9 +96,9 @@ protected:
     // calculate buoyancy
     float calculate_buoyancy_acceleration();
     // calculate drag from velocity and drag coefficient
-    void calculate_drag_force(const Vector3f &velocity, const Vector3f &drag_coefficient, Vector3f &force);
+    void calculate_drag_force(const Vector3f &velocity, const Vector3f &drag_coefficient, Vector3f &force) const;
     // calculate torque water resistance
-    void calculate_angular_drag_torque(const Vector3f &angular_velocity, const Vector3f &drag_coefficient, Vector3f &torque);
+    void calculate_angular_drag_torque(const Vector3f &angular_velocity, const Vector3f &drag_coefficient, Vector3f &torque) const;
     // calculate torque induced by buoyancy foams
     void calculate_buoyancy_torque(Vector3f &torque);
 

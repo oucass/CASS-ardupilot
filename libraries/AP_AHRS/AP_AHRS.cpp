@@ -24,6 +24,10 @@
 
 extern const AP_HAL::HAL& hal;
 
+#ifndef HAL_AHRS_EKF_TYPE_DEFAULT
+#define HAL_AHRS_EKF_TYPE_DEFAULT 3
+#endif
+
 // table of user settable parameters
 const AP_Param::GroupInfo AP_AHRS::var_info[] = {
     // index 0 and 1 are for old parameters that are no longer not used
@@ -61,7 +65,7 @@ const AP_Param::GroupInfo AP_AHRS::var_info[] = {
 
     // @Param: WIND_MAX
     // @DisplayName: Maximum wind
-    // @Description: This sets the maximum allowable difference between ground speed and airspeed. This allows the plane to cope with a failing airspeed sensor. A value of zero means to use the airspeed as is.
+    // @Description: This sets the maximum allowable difference between ground speed and airspeed. This allows the plane to cope with a failing airspeed sensor. A value of zero means to use the airspeed as is. See ARSPD_OPTIONS and ARSPD_MAX_WIND to disable airspeed sensors.
     // @Range: 0 127
     // @Units: m/s
     // @Increment: 1
@@ -127,9 +131,9 @@ const AP_Param::GroupInfo AP_AHRS::var_info[] = {
     // @Param: EKF_TYPE
     // @DisplayName: Use NavEKF Kalman filter for attitude and position estimation
     // @Description: This controls which NavEKF Kalman filter version is used for attitude and position estimation
-    // @Values: 0:Disabled,2:Enable EKF2,3:Enable EKF3
+    // @Values: 0:Disabled,2:Enable EKF2,3:Enable EKF3,11:ExternalAHRS
     // @User: Advanced
-    AP_GROUPINFO("EKF_TYPE",  14, AP_AHRS, _ekf_type, 2),
+    AP_GROUPINFO("EKF_TYPE",  14, AP_AHRS, _ekf_type, HAL_AHRS_EKF_TYPE_DEFAULT),
 #endif
 
     // @Param: CUSTOM_ROLL
@@ -177,26 +181,6 @@ Vector3f AP_AHRS::get_gyro_latest(void) const
 {
     const uint8_t primary_gyro = get_primary_gyro_index();
     return AP::ins().get_gyro(primary_gyro) + get_gyro_drift();
-}
-
-// return airspeed estimate if available
-bool AP_AHRS::airspeed_estimate(float *airspeed_ret) const
-{
-    if (airspeed_sensor_enabled()) {
-        *airspeed_ret = _airspeed->get_airspeed();
-        if (_wind_max > 0 && AP::gps().status() >= AP_GPS::GPS_OK_FIX_2D) {
-            // constrain the airspeed by the ground speed
-            // and AHRS_WIND_MAX
-            const float gnd_speed = AP::gps().ground_speed();
-            float true_airspeed = *airspeed_ret * get_EAS2TAS();
-            true_airspeed = constrain_float(true_airspeed,
-                                            gnd_speed - _wind_max,
-                                            gnd_speed + _wind_max);
-            *airspeed_ret = true_airspeed / get_EAS2TAS();
-        }
-        return true;
-    }
-    return false;
 }
 
 // set_trim
@@ -251,7 +235,7 @@ Vector2f AP_AHRS::groundspeed_vector(void)
     Vector2f gndVelADS;
     Vector2f gndVelGPS;
     float airspeed = 0;
-    const bool gotAirspeed = airspeed_estimate_true(&airspeed);
+    const bool gotAirspeed = airspeed_estimate_true(airspeed);
     const bool gotGPS = (AP::gps().status() >= AP_GPS::GPS_OK_FIX_2D);
     if (gotAirspeed) {
         const Vector3f wind = wind_estimate();
@@ -262,7 +246,7 @@ Vector2f AP_AHRS::groundspeed_vector(void)
 
     // Generate estimate of ground speed vector using GPS
     if (gotGPS) {
-        const float cog = radians(AP::gps().ground_course_cd()*0.01f);
+        const float cog = radians(AP::gps().ground_course());
         gndVelGPS = Vector2f(cosf(cog), sinf(cog)) * AP::gps().ground_speed();
     }
     // If both ADS and GPS data is available, apply a complementary filter
@@ -472,14 +456,14 @@ float AP_AHRS::getSSA(void)
 }
 
 // rotate a 2D vector from earth frame to body frame
-Vector2f AP_AHRS::rotate_earth_to_body2D(const Vector2f &ef) const
+Vector2f AP_AHRS::earth_to_body2D(const Vector2f &ef) const
 {
     return Vector2f(ef.x * _cos_yaw + ef.y * _sin_yaw,
                     -ef.x * _sin_yaw + ef.y * _cos_yaw);
 }
 
 // rotate a 2D vector from earth frame to body frame
-Vector2f AP_AHRS::rotate_body_to_earth2D(const Vector2f &bf) const
+Vector2f AP_AHRS::body_to_earth2D(const Vector2f &bf) const
 {
     return Vector2f(bf.x * _cos_yaw - bf.y * _sin_yaw,
                     bf.x * _sin_yaw + bf.y * _cos_yaw);
@@ -495,12 +479,12 @@ void AP_AHRS::Log_Write_Home_And_Origin()
 #if AP_AHRS_NAVEKF_AVAILABLE
     Location ekf_orig;
     if (get_origin(ekf_orig)) {
-        logger->Write_Origin(LogOriginType::ekf_origin, ekf_orig);
+        Write_Origin(LogOriginType::ekf_origin, ekf_orig);
     }
 #endif
 
     if (home_is_set()) {
-        logger->Write_Origin(LogOriginType::ahrs_home, _home);
+        Write_Origin(LogOriginType::ahrs_home, _home);
     }
 }
 
@@ -516,6 +500,12 @@ void AP_AHRS::update_nmea_out()
         _nmea_out->update();
     }
 #endif
+}
+
+// return current vibration vector for primary IMU
+Vector3f AP_AHRS::get_vibration(void) const
+{
+    return AP::ins().get_vibration_levels();
 }
 
 // singleton instance

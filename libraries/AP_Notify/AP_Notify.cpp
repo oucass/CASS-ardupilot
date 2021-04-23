@@ -21,6 +21,7 @@
 #include "Display.h"
 #include "ExternalLED.h"
 #include "PCA9685LED_I2C.h"
+#include "NavigatorLED.h"
 #include "NeoPixel.h"
 #include "NCP5623.h"
 #include "OreoLED_I2C.h"
@@ -35,6 +36,8 @@
 #include "SITL_SFML_LED.h"
 #include <stdio.h>
 #include "AP_BoardLED2.h"
+#include "ProfiLED.h"
+#include "ScriptingLED.h"
 
 extern const AP_HAL::HAL& hal;
 
@@ -53,7 +56,7 @@ AP_Notify *AP_Notify::_singleton;
 #if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
   #define BUILD_DEFAULT_LED_TYPE (Notify_LED_Board | I2C_LEDS)
 
-// Linux boards    
+// Linux boards
 #elif CONFIG_HAL_BOARD == HAL_BOARD_LINUX
   #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIO
     #define BUILD_DEFAULT_LED_TYPE (Notify_LED_Board | I2C_LEDS |\
@@ -93,6 +96,22 @@ AP_Notify *AP_Notify::_singleton;
 #define BUZZER_ENABLE_DEFAULT 1
 #endif
 
+#ifndef NOTIFY_LED_BRIGHT_DEFAULT
+#define NOTIFY_LED_BRIGHT_DEFAULT RGB_LED_HIGH
+#endif
+
+#ifndef NOTIFY_LED_OVERRIDE_DEFAULT
+#ifdef HAL_BUILD_AP_PERIPH
+    #define NOTIFY_LED_OVERRIDE_DEFAULT 1       // rgb_source_t::mavlink
+#else
+    #define NOTIFY_LED_OVERRIDE_DEFAULT 0       // rgb_source_t::standard
+#endif
+#endif
+
+#ifndef NOTIFY_LED_LEN_DEFAULT
+#define NOTIFY_LED_LEN_DEFAULT 1
+#endif
+
 // table of user settable parameters
 const AP_Param::GroupInfo AP_Notify::var_info[] = {
 
@@ -101,7 +120,7 @@ const AP_Param::GroupInfo AP_Notify::var_info[] = {
     // @Description: Select the RGB LED brightness level. When USB is connected brightness will never be higher than low regardless of the setting.
     // @Values: 0:Off,1:Low,2:Medium,3:High
     // @User: Advanced
-    AP_GROUPINFO("LED_BRIGHT", 0, AP_Notify, _rgb_led_brightness, RGB_LED_HIGH),
+    AP_GROUPINFO("LED_BRIGHT", 0, AP_Notify, _rgb_led_brightness, NOTIFY_LED_BRIGHT_DEFAULT),
 
     // @Param: BUZZ_ENABLE
     // @DisplayName: Buzzer enable
@@ -113,9 +132,9 @@ const AP_Param::GroupInfo AP_Notify::var_info[] = {
     // @Param: LED_OVERRIDE
     // @DisplayName: Specifies colour source for the RGBLed
     // @Description: Specifies the source for the colours and brightness for the LED.  OutbackChallenge conforms to the MedicalExpress (https://uavchallenge.org/medical-express/) rules, essentially "Green" is disarmed (safe-to-approach), "Red" is armed (not safe-to-approach). Traffic light is a simplified color set, red when armed, yellow when the safety switch is not surpressing outputs (but disarmed), and green when outputs are surpressed and disarmed, the LED will blink faster if disarmed and failing arming checks.
-    // @Values: 0:Standard,1:MAVLink,2:OutbackChallenge,3:TrafficLight
+    // @Values: 0:Standard,1:MAVLink/Scripting/AP_Periph,2:OutbackChallenge,3:TrafficLight
     // @User: Advanced
-    AP_GROUPINFO("LED_OVERRIDE", 2, AP_Notify, _rgb_led_override, 0),
+    AP_GROUPINFO("LED_OVERRIDE", 2, AP_Notify, _rgb_led_override, NOTIFY_LED_OVERRIDE_DEFAULT),
 
     // @Param: DISPLAY_TYPE
     // @DisplayName: Type of on-board I2C display
@@ -145,7 +164,7 @@ const AP_Param::GroupInfo AP_Notify::var_info[] = {
     // @Param: LED_TYPES
     // @DisplayName: LED Driver Types
     // @Description: Controls what types of LEDs will be enabled
-    // @Bitmask: 0:Build in LED, 1:Internal ToshibaLED, 2:External ToshibaLED, 3:External PCA9685, 4:Oreo LED, 5:UAVCAN, 6:NCP5623 External, 7:NCP5623 Internal, 8:NeoPixel
+    // @Bitmask: 0:Build in LED, 1:Internal ToshibaLED, 2:External ToshibaLED, 3:External PCA9685, 4:Oreo LED, 5:UAVCAN, 6:NCP5623 External, 7:NCP5623 Internal, 8:NeoPixel, 9:ProfiLED, 10:Scripting
     // @User: Advanced
     AP_GROUPINFO("LED_TYPES", 6, AP_Notify, _led_type, BUILD_DEFAULT_LED_TYPE),
 
@@ -160,11 +179,19 @@ const AP_Param::GroupInfo AP_Notify::var_info[] = {
 
     // @Param: BUZZ_VOLUME
     // @DisplayName: Buzzer volume
-    // @Description: Enable or disable the buzzer.
+    // @Description: Control the volume of the buzzer
     // @Range: 0 100
     // @Units: %
     AP_GROUPINFO("BUZZ_VOLUME", 8, AP_Notify, _buzzer_volume, 100),
-    
+
+    // @Param: LED_LEN
+    // @DisplayName: Serial LED String Length
+    // @Description: The number of Serial LED's to use for notifications (NeoPixel's and ProfiLED)
+    // @Range: 1 32
+    // @User: Advanced
+    // @RebootRequired: True
+    AP_GROUPINFO("LED_LEN", 9, AP_Notify, _led_len, NOTIFY_LED_LEN_DEFAULT),
+
     AP_GROUPEND
 };
 
@@ -221,6 +248,8 @@ void AP_Notify::add_backends(void)
                 ADD_BACKEND(new RCOutputRGBLed(HAL_RCOUT_RGBLED_RED, HAL_RCOUT_RGBLED_GREEN, HAL_RCOUT_RGBLED_BLUE));
   #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DISCO
                 ADD_BACKEND(new DiscoLED());
+  #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIGATOR
+                ADD_BACKEND(new NavigatorLED());
   #endif
 #endif // CONFIG_HAL_BOARD == HAL_BOARD_LINUX
 
@@ -262,6 +291,9 @@ void AP_Notify::add_backends(void)
             case Notify_LED_NeoPixel:
                 ADD_BACKEND(new NeoPixel());
                 break;
+            case Notify_LED_ProfiLED:
+                ADD_BACKEND(new ProfiLED());
+                break;
             case Notify_LED_OreoLED:
 #if !HAL_MINIMIZE_FEATURES
                 if (_oreo_theme) {
@@ -270,9 +302,15 @@ void AP_Notify::add_backends(void)
 #endif
                 break;
             case Notify_LED_UAVCAN:
-#if HAL_WITH_UAVCAN
+#if HAL_ENABLE_LIBUAVCAN_DRIVERS
                 ADD_BACKEND(new UAVCAN_RGB_LED(0));
-#endif // HAL_WITH_UAVCAN
+#endif // HAL_ENABLE_LIBUAVCAN_DRIVERS
+                break;
+
+            case Notify_LED_Scripting:
+#ifdef ENABLE_SCRIPTING
+                ADD_BACKEND(new ScriptingLED());
+#endif
                 break;
 
         }
@@ -352,6 +390,16 @@ void AP_Notify::handle_led_control(const mavlink_message_t &msg)
     }
 }
 
+// handle RGB from Scripting or AP_Periph
+void AP_Notify::handle_rgb(uint8_t r, uint8_t g, uint8_t b, uint8_t rate_hz)
+{
+    for (uint8_t i = 0; i < _num_devices; i++) {
+        if (_devices[i] != nullptr) {
+            _devices[i]->rgb_control(r, g, b, rate_hz);
+        }
+    }
+}
+
 // handle a PLAY_TUNE message
 void AP_Notify::handle_play_tune(const mavlink_message_t &msg)
 {
@@ -383,6 +431,22 @@ void AP_Notify::send_text(const char *str)
     strncpy(_send_text, str, sizeof(_send_text));
     _send_text[sizeof(_send_text)-1] = 0;
     _send_text_updated_millis = AP_HAL::millis();
+}
+
+// convert 0-3 to 0-100
+int8_t AP_Notify::get_rgb_led_brightness_percent() const
+{
+    switch (_rgb_led_brightness) {
+    default:
+    case RGB_LED_OFF:
+        return 0;
+    case RGB_LED_LOW:
+        return 33;
+    case RGB_LED_MEDIUM:
+        return 66;
+    case RGB_LED_HIGH:
+        return 100;
+    }
 }
 
 namespace AP {

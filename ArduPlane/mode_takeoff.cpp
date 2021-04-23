@@ -11,7 +11,7 @@ const AP_Param::GroupInfo ModeTakeoff::var_info[] = {
     // @Range: 0 200
     // @Increment: 1
     // @Units: m
-    // @User: User
+    // @User: Standard
     AP_GROUPINFO("ALT", 1, ModeTakeoff, target_alt, 50),
 
     // @Param: LVL_ALT
@@ -20,7 +20,7 @@ const AP_Param::GroupInfo ModeTakeoff::var_info[] = {
     // @Range: 0 50
     // @Increment: 1
     // @Units: m
-    // @User: User
+    // @User: Standard
     AP_GROUPINFO("LVL_ALT", 2, ModeTakeoff, level_alt, 20),
 
     // @Param: LVL_PITCH
@@ -29,7 +29,7 @@ const AP_Param::GroupInfo ModeTakeoff::var_info[] = {
     // @Range: 0 30
     // @Increment: 1
     // @Units: deg
-    // @User: User
+    // @User: Standard
     AP_GROUPINFO("LVL_PITCH", 3, ModeTakeoff, level_pitch, 15),
 
     // @Param: DIST
@@ -38,7 +38,7 @@ const AP_Param::GroupInfo ModeTakeoff::var_info[] = {
     // @Range: 0 500
     // @Increment: 1
     // @Units: m
-    // @User: User
+    // @User: Standard
     AP_GROUPINFO("DIST", 4, ModeTakeoff, target_dist, 200),
     
     AP_GROUPEND
@@ -51,11 +51,6 @@ ModeTakeoff::ModeTakeoff()
 
 bool ModeTakeoff::_enter()
 {
-    // the altitude to circle at is taken from the current altitude
-    plane.throttle_allows_nudging = true;
-    plane.auto_throttle_mode = true;
-    plane.auto_navigation_mode = true;
-
     takeoff_started = false;
 
     return true;
@@ -65,7 +60,7 @@ void ModeTakeoff::update()
 {
     if (!takeoff_started) {
         // see if we will skip takeoff as already flying
-        if (plane.is_flying() && plane.ahrs.groundspeed() > 3) {
+        if (plane.is_flying() && (millis() - plane.started_flying_ms > 10000U) && plane.ahrs.groundspeed() > 3) {
             gcs().send_text(MAV_SEVERITY_INFO, "Takeoff skipped - circling");
             plane.prev_WP_loc = plane.current_loc;
             plane.next_WP_loc = plane.current_loc;
@@ -117,7 +112,10 @@ void ModeTakeoff::update()
         plane.next_WP_loc.alt = start_loc.alt + target_alt*100.0;
 
         plane.set_flight_stage(AP_Vehicle::FixedWing::FLIGHT_NORMAL);
-        plane.complete_auto_takeoff();
+        
+#if AC_FENCE == ENABLED
+        plane.fence.auto_enable_fence_after_takeoff();
+#endif
     }
 
     if (plane.flight_stage == AP_Vehicle::FixedWing::FLIGHT_TAKEOFF) {
@@ -129,5 +127,11 @@ void ModeTakeoff::update()
         plane.calc_nav_pitch();
         plane.calc_throttle();
     }
+}
+
+void ModeTakeoff::navigate()
+{
+    // Zero indicates to use WP_LOITER_RAD
+    plane.update_loiter(0);
 }
 

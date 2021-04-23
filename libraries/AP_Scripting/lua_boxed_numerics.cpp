@@ -4,7 +4,7 @@
 
 extern const AP_HAL::HAL& hal;
 
-static uint32_t coerce_to_uint32_t(lua_State *L, int arg) {
+uint32_t coerce_to_uint32_t(lua_State *L, int arg) {
     { // userdata
         const uint32_t * ud = static_cast<uint32_t *>(luaL_testudata(L, arg, "uint32_t"));
         if (ud != nullptr) {
@@ -26,7 +26,7 @@ static uint32_t coerce_to_uint32_t(lua_State *L, int arg) {
     { // float
         int success;
         const lua_Number v = lua_tonumberx(L, arg, &success);
-        if (success && v >= 0 && v <= UINT32_MAX) {
+        if (success && v >= 0 && v <= float(UINT32_MAX)) {
             return static_cast<uint32_t>(v);
         }
     }
@@ -45,6 +45,7 @@ int new_uint32_t(lua_State *L) {
 }
 
 // the exposed constructor to lua calls to create a uint32_t
+int lua_new_uint32_t(lua_State *L);
 int lua_new_uint32_t(lua_State *L) {
     const int args = lua_gettop(L);
     if (args > 1) {
@@ -108,7 +109,7 @@ UINT32_T_BOX_OP(shr, >>)
         return 1; \
     }
 
-UINT32_T_BOX_OP_BOOL(eq, =)
+UINT32_T_BOX_OP_BOOL(eq, ==)
 UINT32_T_BOX_OP_BOOL(lt, <)
 UINT32_T_BOX_OP_BOOL(le, <=)
 

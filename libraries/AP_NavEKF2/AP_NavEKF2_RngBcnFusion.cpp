@@ -1,14 +1,5 @@
-#include <AP_HAL/AP_HAL.h>
-
 #include "AP_NavEKF2.h"
 #include "AP_NavEKF2_core.h"
-#include <AP_AHRS/AP_AHRS.h>
-#include <AP_Vehicle/AP_Vehicle.h>
-#include <GCS_MAVLink/GCS.h>
-
-#include <stdio.h>
-
-extern const AP_HAL::HAL& hal;
 
 /********************************************************
 *                   FUSE MEASURED_DATA                  *
@@ -223,8 +214,8 @@ void NavEKF2_core::FuseRngBcn()
                     statesArray[j] = statesArray[j] - Kfusion[j] * innovRngBcn;
                 }
 
-                // the first 3 states represent the angular misalignment vector. This is
-                // is used to correct the estimated quaternion on the current time step
+                // the first 3 states represent the angular misalignment vector.
+                // This is used to correct the estimated quaternion on the current time step
                 stateStruct.quat.rotate(stateStruct.angErr);
 
                 // record healthy fusion

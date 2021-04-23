@@ -17,29 +17,29 @@ AC_CASS_HYT271::AC_CASS_HYT271() :
 bool AC_CASS_HYT271::init(uint8_t busId, uint8_t i2cAddr)
 {
     // Bus 0 is for Pixhawk 2.1 I2C and Bus 1 is for Pixhawk 1 and PixRacer I2C
+    // Check if device exists
     _dev = std::move(hal.i2c_mgr->get_device(busId, i2cAddr));
-
     if (!_dev) {
-        printf("HYT271 device is null!");
         return false;
     }
-    WITH_SEMAPHORE(_sem);
+    _dev->get_semaphore()->take_blocking();
 
     _dev->set_retries(10);
 
+    // Start the first measurement
     if (!_measure()) {
-        printf("HYT271 read failed");
+        _dev->get_semaphore()->give();
         return false;
     }
 
     // lower retries for run
     _dev->set_retries(3);
 
-    //_dev->get_semaphore()->give();
+    _dev->get_semaphore()->give();
 
     /* Request 20Hz update */
     // Max conversion time is 12 ms
-    _dev->register_periodic_callback(60000,
+    _dev->register_periodic_callback(100000,
                                      FUNCTOR_BIND_MEMBER(&AC_CASS_HYT271::_timer, void));
     return true;
 }
@@ -73,6 +73,7 @@ bool AC_CASS_HYT271::_collect(float &hum, float &temp)
         return false;
     }
 
+    WITH_SEMAPHORE(_sem);                           // semaphore for access to shared frontend data
     // Bit shift and convert to floating point number
     raw = (data[0] << 8) | data[1];
     raw = raw & 0x3FFF;
@@ -88,7 +89,6 @@ bool AC_CASS_HYT271::_collect(float &hum, float &temp)
 
 void AC_CASS_HYT271::_timer(void)
 {
-    WITH_SEMAPHORE(_sem);                           // semaphore for access to shared frontend data
     _healthy = _collect(_humidity, _temperature);   // Retreive data from the sensor
     _measure();                                     // Request a new measurement to the sensor
 }

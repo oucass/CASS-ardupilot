@@ -32,7 +32,7 @@ public:
     /// constructors
     Location();
     Location(int32_t latitude, int32_t longitude, int32_t alt_in_cm, AltFrame frame);
-    Location(const Vector3f &ekf_offset_neu);
+    Location(const Vector3f &ekf_offset_neu, AltFrame frame);
 
     static void set_terrain(AP_Terrain* terrain) { _terrain = terrain; }
 
@@ -73,6 +73,9 @@ public:
 
     // extrapolate latitude/longitude given bearing and distance
     void offset_bearing(float bearing, float distance);
+    
+    // extrapolate latitude/longitude given bearing, pitch and distance
+    void offset_bearing_and_pitch(float bearing, float pitch, float distance);
 
     // longitude_scale - returns the scaler to compensate for
     // shrinking longitude as you move north or south from the equator

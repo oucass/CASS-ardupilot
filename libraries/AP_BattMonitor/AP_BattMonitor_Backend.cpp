@@ -98,7 +98,7 @@ float AP_BattMonitor_Backend::voltage_resting_estimate() const
     return MAX(_state.voltage, _state.voltage_resting_estimate);
 }
 
-AP_BattMonitor::BatteryFailsafe AP_BattMonitor_Backend::update_failsafes(void)
+AP_BattMonitor::Failsafe AP_BattMonitor_Backend::update_failsafes(void)
 {
     const uint32_t now = AP_HAL::millis();
 
@@ -111,7 +111,7 @@ AP_BattMonitor::BatteryFailsafe AP_BattMonitor_Backend::update_failsafes(void)
             _state.critical_voltage_start_ms = now;
         } else if (_params._low_voltage_timeout > 0 &&
                    now - _state.critical_voltage_start_ms > uint32_t(_params._low_voltage_timeout)*1000U) {
-            return AP_BattMonitor::BatteryFailsafe_Critical;
+            return AP_BattMonitor::Failsafe::Critical;
         }
     } else {
         // acceptable voltage so reset timer
@@ -119,7 +119,7 @@ AP_BattMonitor::BatteryFailsafe AP_BattMonitor_Backend::update_failsafes(void)
     }
 
     if (critical_capacity) {
-        return AP_BattMonitor::BatteryFailsafe_Critical;
+        return AP_BattMonitor::Failsafe::Critical;
     }
 
     if (low_voltage) {
@@ -128,7 +128,7 @@ AP_BattMonitor::BatteryFailsafe AP_BattMonitor_Backend::update_failsafes(void)
             _state.low_voltage_start_ms = now;
         } else if (_params._low_voltage_timeout > 0 &&
                    now - _state.low_voltage_start_ms > uint32_t(_params._low_voltage_timeout)*1000U) {
-            return AP_BattMonitor::BatteryFailsafe_Low;
+            return AP_BattMonitor::Failsafe::Low;
         }
     } else {
         // acceptable voltage so reset timer
@@ -136,11 +136,11 @@ AP_BattMonitor::BatteryFailsafe AP_BattMonitor_Backend::update_failsafes(void)
     }
 
     if (low_capacity) {
-        return AP_BattMonitor::BatteryFailsafe_Low;
+        return AP_BattMonitor::Failsafe::Low;
     }
 
     // if we've gotten this far then battery is ok
-    return AP_BattMonitor::BatteryFailsafe_None;
+    return AP_BattMonitor::Failsafe::None;
 }
 
 static bool update_check(size_t buflen, char *buffer, bool failed, const char *message)
@@ -168,12 +168,12 @@ bool AP_BattMonitor_Backend::arming_checks(char * buffer, size_t buflen) const
                                 is_positive(_params._low_voltage) &&
                                 (_params._low_voltage < _params._critical_voltage);
 
-    bool result = update_check(buflen, buffer, low_voltage,  "low voltage failsafe");
+    bool result =      update_check(buflen, buffer, below_arming_voltage, "below minimum arming voltage");
+    result = result && update_check(buflen, buffer, below_arming_capacity, "below minimum arming capacity");
+    result = result && update_check(buflen, buffer, low_voltage,  "low voltage failsafe");
     result = result && update_check(buflen, buffer, low_capacity, "low capacity failsafe");
     result = result && update_check(buflen, buffer, critical_voltage, "critical voltage failsafe");
     result = result && update_check(buflen, buffer, critical_capacity, "critical capacity failsafe");
-    result = result && update_check(buflen, buffer, below_arming_voltage, "below minimum arming voltage");
-    result = result && update_check(buflen, buffer, below_arming_capacity, "below minimum arming capacity");
     result = result && update_check(buflen, buffer, fs_capacity_inversion, "capacity failsafe critical > low");
     result = result && update_check(buflen, buffer, fs_voltage_inversion, "voltage failsafe critical > low");
 

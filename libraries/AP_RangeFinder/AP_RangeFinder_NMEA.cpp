@@ -49,8 +49,19 @@ bool AP_RangeFinder_NMEA::get_reading(uint16_t &reading_cm)
     return true;
 }
 
+// get temperature reading
+bool AP_RangeFinder_NMEA::get_temp(float &temp)
+{
+    uint32_t now_ms = AP_HAL::millis();
+    if ((_temp_readtime_ms == 0) || ((now_ms - _temp_readtime_ms) > read_timeout_ms())) {
+        return false;
+    }
+    temp = _temp;
+    return true;
+}
+
 // add a single character to the buffer and attempt to decode
-// returns true if a complete sentence was successfully decoded
+// returns true if a distance was successfully decoded
 bool AP_RangeFinder_NMEA::decode(char c)
 {
     switch (c) {
@@ -62,6 +73,10 @@ bool AP_RangeFinder_NMEA::decode(char c)
     case '\n':
     case '*':
     {
+        if (_sentence_done) {
+            return false;
+        }
+
         // null terminate and decode latest term
         _term[_term_offset] = 0;
         bool valid_sentence = decode_latest_term();
@@ -80,6 +95,7 @@ bool AP_RangeFinder_NMEA::decode(char c)
         _checksum = 0;
         _term_is_checksum = false;
         _distance_m = -1.0f;
+        _sentence_done = false;
         return false;
     }
 
@@ -95,20 +111,32 @@ bool AP_RangeFinder_NMEA::decode(char c)
 }
 
 // decode the most recently consumed term
-// returns true if new sentence has just passed checksum test and is validated
+// returns true if new distance sentence has just passed checksum test and is validated
 bool AP_RangeFinder_NMEA::decode_latest_term()
 {
     // handle the last term in a message
     if (_term_is_checksum) {
+        _sentence_done = true;
         uint8_t nibble_high = 0;
         uint8_t nibble_low  = 0;
         if (!hex_to_uint8(_term[0], nibble_high) || !hex_to_uint8(_term[1], nibble_low)) {
             return false;
         }
         const uint8_t checksum = (nibble_high << 4u) | nibble_low;
-        return ((checksum == _checksum) &&
-                !is_negative(_distance_m) &&
-                (_sentence_type == SONAR_DBT || _sentence_type == SONAR_DPT));
+        if (checksum == _checksum) {
+            if ((_sentence_type == SONAR_DBT || _sentence_type == SONAR_DPT) && !is_negative(_distance_m)) {
+                // return true if distance is valid
+                return true;
+            }
+            if (_sentence_type == SONAR_MTW) {
+                _temp = _temp_unvalidated;
+                _temp_readtime_ms = AP_HAL::millis();
+                // return false because this is not a distance
+                // temperature is accessed via separate accessor
+                return false;
+            }
+        }
+        return false;
     }
 
     // the first term determines the sentence type
@@ -125,6 +153,8 @@ bool AP_RangeFinder_NMEA::decode_latest_term()
             _sentence_type = SONAR_DBT;
         } else if (strcmp(term_type, "DPT") == 0) {
             _sentence_type = SONAR_DPT;
+        } else if (strcmp(term_type, "MTW") == 0) {
+            _sentence_type = SONAR_MTW;
         } else {
             _sentence_type = SONAR_UNKNOWN;
         }
@@ -140,6 +170,11 @@ bool AP_RangeFinder_NMEA::decode_latest_term()
         // parse DPT messages
         if (_term_number == 1) {
             _distance_m = strtof(_term, NULL);
+        }
+    } else if (_sentence_type == SONAR_MTW) {
+        // parse MTW (mean water temperature) messages
+        if (_term_number == 1) {
+            _temp_unvalidated = strtof(_term, NULL);
         }
     }
 

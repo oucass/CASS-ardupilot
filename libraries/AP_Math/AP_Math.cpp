@@ -103,7 +103,7 @@ float linear_interpolate(float low_output, float high_output,
  * alpha range: [0,1] min to max expo
  * input range: [-1,1]
  */
-float expo_curve(float alpha, float x)
+constexpr float expo_curve(float alpha, float x)
 {
     return (1.0f - alpha) * x + alpha * x * x * x;
 }
@@ -260,14 +260,40 @@ template float wrap_2PI<float>(const float radian);
 template float wrap_2PI<double>(const double radian);
 
 template <typename T>
-T constrain_value(const T amt, const T low, const T high)
+T constrain_value_line(const T amt, const T low, const T high, uint32_t line)
 {
     // the check for NaN as a float prevents propagation of floating point
     // errors through any function that uses constrain_value(). The normal
     // float semantics already handle -Inf and +Inf
     if (isnan(amt)) {
-        AP::internalerror().error(AP_InternalError::error_t::constraining_nan);
+        AP::internalerror().error(AP_InternalError::error_t::constraining_nan, line);
         return (low + high) / 2;
+    }
+
+    if (amt < low) {
+        return low;
+    }
+
+    if (amt > high) {
+        return high;
+    }
+
+    return amt;
+}
+
+template float constrain_value_line<float>(const float amt, const float low, const float high, uint32_t line);
+
+template <typename T>
+T constrain_value(const T amt, const T low, const T high)
+{
+    // the check for NaN as a float prevents propagation of floating point
+    // errors through any function that uses constrain_value(). The normal
+    // float semantics already handle -Inf and +Inf
+    if (std::is_floating_point<T>::value) {
+        if (isnan(amt)) {
+            INTERNAL_ERROR(AP_InternalError::error_t::constraining_nan);
+            return (low + high) / 2;
+        }
     }
 
     if (amt < low) {
@@ -338,13 +364,53 @@ bool rotation_equal(enum Rotation r1, enum Rotation r2)
     return (v1 - v2).length() < 0.001;
 }
 
+/*
+ * return a velocity correction (in m/s in NED) for a sensor's position given it's position offsets
+ * this correction should be added to the sensor NED measurement
+ * sensor_offset_bf is in meters in body frame (Foward, Right, Down)
+ * rot_ef_to_bf is a rotation matrix to rotate from earth-frame (NED) to body frame
+ * angular_rate is rad/sec
+ */
+Vector3f get_vel_correction_for_sensor_offset(const Vector3f &sensor_offset_bf, const Matrix3f &rot_ef_to_bf, const Vector3f &angular_rate)
+{
+    if (sensor_offset_bf.is_zero()) {
+        return Vector3f();
+    }
+
+    // correct velocity
+    const Vector3f vel_offset_body = angular_rate % sensor_offset_bf;
+    return rot_ef_to_bf.mul_transpose(vel_offset_body) * -1.0f;
+}
+
+/*
+  calculate a low pass filter alpha value
+ */
+float calc_lowpass_alpha_dt(float dt, float cutoff_freq)
+{
+    if (dt <= 0.0f || cutoff_freq <= 0.0f) {
+        return 1.0;
+    }
+    float rc = 1.0f/(M_2PI*cutoff_freq);
+    return constrain_float(dt/(dt+rc), 0.0f, 1.0f);
+}
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
 // fill an array of float with NaN, used to invalidate memory in SITL
 void fill_nanf(float *f, uint16_t count)
 {
+    const float n = std::numeric_limits<float>::signaling_NaN();
     while (count--) {
-        *f++ = std::numeric_limits<float>::signaling_NaN();
+        *f++ = n;
     }
 }
 #endif
+
+/*
+  calculate turn rate in deg/sec given a bank angle and airspeed for a
+  fixed wing aircraft
+ */
+float fixedwing_turn_rate(float bank_angle_deg, float airspeed)
+{
+    bank_angle_deg = constrain_float(bank_angle_deg, -80, 80);
+    return degrees(GRAVITY_MSS*tanf(radians(bank_angle_deg))/MAX(airspeed,1));
+}

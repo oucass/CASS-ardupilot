@@ -36,6 +36,7 @@ class ChibiOS::SoftSigReader {
     friend class ChibiOS::RCInput;
 public:
     bool attach_capture_timer(ICUDriver* icu_drv, icuchannel_t chan, uint8_t dma_stream, uint32_t dma_channel);
+    void disable(void);
 
 private:
     uint32_t *signal;
@@ -48,7 +49,7 @@ private:
     uint32_t dmamode;
     ICUConfig icucfg;
     ICUDriver* _icu_drv = nullptr;
-    typedef struct PACKED {
+    typedef struct {
         uint32_t w0;
         uint32_t w1;
     } pulse_t;

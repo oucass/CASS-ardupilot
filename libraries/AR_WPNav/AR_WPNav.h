@@ -104,13 +104,17 @@ private:
     // returns true if vehicle should pivot turn at next waypoint
     bool use_pivot_steering_at_next_WP(float yaw_error_cd) const;
 
-    // returns true if vehicle should pivot immediately (because heading error is too large)
-    bool use_pivot_steering(float yaw_error_cd);
+    // updates _pivot_active flag based on heading error to destination
+    // relies on update_distance_and_bearing_to_destination having been called first
+    // to update _oa_wp_bearing and _reversed variables
+    void update_pivot_active_flag();
 
     // adjust speed to ensure it does not fall below value held in SPEED_MIN
-    void apply_speed_min(float &desired_speed);
+    // desired_speed should always be positive (or zero)
+    void apply_speed_min(float &desired_speed) const;
 
-private:
+    // calculate the crosstrack error (does not rely on L1 controller)
+    float calc_crosstrack_error(const Location& current_loc) const;
 
     // parameters
     AP_Float _speed_max;            // target speed between waypoints in m/s

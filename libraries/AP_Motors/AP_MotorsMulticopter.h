@@ -50,14 +50,14 @@ public:
 
     // update estimated throttle required to hover
     void                update_throttle_hover(float dt);
-    virtual float       get_throttle_hover() const override { return _throttle_hover; }
+    virtual float       get_throttle_hover() const override { return constrain_float(_throttle_hover, AP_MOTORS_THST_HOVER_MIN, AP_MOTORS_THST_HOVER_MAX); }
 
     // passes throttle directly to all motors for ESC calibration.
     //   throttle_input is in the range of 0 ~ 1 where 0 will send get_pwm_output_min() and 1 will send get_pwm_output_max()
     void                set_throttle_passthrough_for_esc_calibration(float throttle_input);
 
     // get_lift_max - get maximum lift ratio - for logging purposes only
-    float               get_lift_max() { return _lift_max; }
+    float               get_lift_max() const { return _lift_max; }
 
     // get_batt_voltage_filt - get battery voltage ratio - for logging purposes only
     float               get_batt_voltage_filt() const { return _batt_voltage_filt.get(); }
@@ -84,12 +84,22 @@ public:
     int16_t             get_pwm_output_min() const;
     int16_t             get_pwm_output_max() const;
     
+    // parameter check for MOT_PWM_MIN/MAX, returns true if parameters are valid
+    bool check_mot_pwm_params() const;
+
+    // converts desired thrust to linearized actuator output in a range of 0~1
+    float               thrust_to_actuator(float thrust_in);
+
     // set thrust compensation callback
     FUNCTOR_TYPEDEF(thrust_compensation_fn_t, void, float *, uint8_t);
     void                set_thrust_compensation_callback(thrust_compensation_fn_t callback) {
         _thrust_compensation_callback = callback;
     }
     
+    // disable the use of motor torque to control yaw. Used when an external mechanism such
+    // as vectoring is used for yaw control
+    virtual void        disable_yaw_torque(void) {}
+
     // var_info for holding Parameter information
     static const struct AP_Param::GroupInfo        var_info[];
 
@@ -118,9 +128,6 @@ protected:
 
     // convert actuator output (0~1) range to pwm range
     int16_t             output_to_pwm(float _actuator_output);
-
-    // converts desired thrust to linearized actuator output in a range of 0~1
-    float               thrust_to_actuator(float thrust_in);
 
     // adds slew rate limiting to actuator output if MOT_SLEW_TIME > 0 and not shutdown
     void                set_actuator_with_slew(float& actuator_output, float input);

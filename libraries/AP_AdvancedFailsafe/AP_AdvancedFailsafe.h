@@ -23,7 +23,6 @@
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Mission/AP_Mission.h>
-#include <AP_RCMapper/AP_RCMapper.h>
 #include <inttypes.h>
 
 
@@ -76,7 +75,7 @@ public:
     bool enabled() { return _enable; }
 
     // check that everything is OK
-    void check(uint32_t last_heartbeat_ms, bool geofence_breached, uint32_t last_valid_rc_ms);
+    void check(bool geofence_breached, uint32_t last_valid_rc_ms);
 
     // generate heartbeat msgs, so external failsafe boards are happy
     // during sensor calibration

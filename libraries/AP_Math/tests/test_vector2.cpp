@@ -52,6 +52,12 @@ TEST(Vector2Test, reflect)
     Vector2f reflected3 = Vector2f(3, 3);
     reflected3.reflect(Vector2f(1, -1));
     EXPECT_EQ(reflected3, Vector2f(-3, -3));
+
+    // rotation
+    Vector2f base = Vector2f(2, 1);
+    base.rotate(radians(90));
+    EXPECT_FLOAT_EQ(base.x, -1);
+    EXPECT_FLOAT_EQ(base.y, 2);
 }
 
 TEST(Vector2Test, closest_point)
@@ -74,6 +80,29 @@ TEST(Vector2Test, closest_point)
               (Vector2f::closest_point(Vector2f{1,0}, Vector2f{0, 0}, Vector2f{5, 5})));
     EXPECT_EQ((Vector2f{0, 1}),
               (Vector2f::closest_point(Vector2f{0,0}, Vector2f{-1, 1}, Vector2f{1, 1})));
+}
+
+TEST(Vector2Test, circle_segment_intersectionx)
+{
+    Vector2f intersection;
+    EXPECT_EQ(Vector2f::circle_segment_intersection(
+                  Vector2f{0,0}, // seg start
+                  Vector2f{1,1}, // seg end
+                  Vector2f{0,0}, // circle center
+                  0.5,                 // circle radius
+                  intersection         // return value for intersection point
+                  ), true);
+    EXPECT_EQ(intersection, Vector2f(sqrtf(0.5)/2,sqrtf(0.5)/2));
+
+    EXPECT_EQ(Vector2f::circle_segment_intersection(
+                  Vector2f{std::numeric_limits<float>::quiet_NaN(),
+                          std::numeric_limits<float>::quiet_NaN()}, // seg start
+                  Vector2f{1,1}, // seg end
+                  Vector2f{0,0}, // circle center
+                  0.5,                 // circle radius
+                  intersection         // return value for intersection point
+                  ), false);
+
 }
 
 AP_GTEST_MAIN()

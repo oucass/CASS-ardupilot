@@ -48,6 +48,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel's X position offset
     // @Description: X position of the center of the wheel in body frame. Positive X is forward of the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
 
@@ -55,6 +56,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel's Y position offset
     // @Description: Y position of the center of the wheel in body frame. Positive Y is to the right of the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
 
@@ -62,6 +64,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel's Z position offset
     // @Description: Z position of the center of the wheel in body frame. Positive Z is down from the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
     AP_GROUPINFO("_POS",     3, AP_WheelEncoder, _pos_offset[0], 0.0f),
@@ -107,6 +110,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel2's X position offset
     // @Description: X position of the center of the second wheel in body frame. Positive X is forward of the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
 
@@ -114,6 +118,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel2's Y position offset
     // @Description: Y position of the center of the second wheel in body frame. Positive Y is to the right of the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
 
@@ -121,6 +126,7 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
     // @DisplayName: Wheel2's Z position offset
     // @Description: Z position of the center of the second wheel in body frame. Positive Z is down from the origin.
     // @Units: m
+    // @Range: -5 5
     // @Increment: 0.01
     // @User: Standard
     AP_GROUPINFO("2_POS",    9, AP_WheelEncoder, _pos_offset[1], 0.0f),
@@ -145,6 +151,8 @@ const AP_Param::GroupInfo AP_WheelEncoder::var_info[] = {
 
 AP_WheelEncoder::AP_WheelEncoder(void)
 {
+    _singleton = this;
+
     AP_Param::setup_object_defaults(this, var_info);
 }
 
@@ -194,7 +202,7 @@ void AP_WheelEncoder::update(void)
 }
 
 // log wheel encoder information
-void AP_WheelEncoder::Log_Write()
+void AP_WheelEncoder::Log_Write() const
 {
     // return immediately if no wheel encoders are enabled
     if (!enabled(0) && !enabled(1)) {
@@ -340,4 +348,16 @@ uint32_t AP_WheelEncoder::get_last_reading_ms(uint8_t instance) const
         return 0;
     }
     return state[instance].last_reading_ms;
+}
+
+// singleton instance
+AP_WheelEncoder *AP_WheelEncoder::_singleton;
+
+namespace AP {
+
+AP_WheelEncoder *wheelencoder()
+{
+    return AP_WheelEncoder::get_singleton();
+}
+
 }

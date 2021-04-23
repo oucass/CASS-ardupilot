@@ -18,6 +18,7 @@
 
 #include "AP_ROMFS.h"
 #include "tinf.h"
+#include <AP_Math/crc.h>
 
 #ifdef HAL_HAVE_AP_ROMFS_EMBEDDED_H
 #include <ap_romfs_embedded.h>
@@ -28,11 +29,12 @@ const AP_ROMFS::embedded_file AP_ROMFS::files[] = {};
 /*
   find an embedded file
 */
-const uint8_t *AP_ROMFS::find_file(const char *name, uint32_t &size)
+const uint8_t *AP_ROMFS::find_file(const char *name, uint32_t &size, uint32_t &crc)
 {
     for (uint16_t i=0; i<ARRAY_SIZE(files); i++) {
         if (strcmp(name, files[i].filename) == 0) {
             size = files[i].size;
+            crc = files[i].crc;
             return files[i].contents;
         }
     }
@@ -47,8 +49,9 @@ const uint8_t *AP_ROMFS::find_file(const char *name, uint32_t &size)
 */
 const uint8_t *AP_ROMFS::find_decompress(const char *name, uint32_t &size)
 {
-    uint32_t compressed_size;
-    const uint8_t *compressed_data = find_file(name, compressed_size);
+    uint32_t compressed_size = 0;
+    uint32_t crc;
+    const uint8_t *compressed_data = find_file(name, compressed_size, crc);
     if (!compressed_data) {
         return nullptr;
     }
@@ -101,6 +104,11 @@ const uint8_t *AP_ROMFS::find_decompress(const char *name, uint32_t &size)
         return nullptr;
     }
 
+    if (crc32_small(0, decompressed_data, decompressed_size) != crc) {
+        ::free(decompressed_data);
+        return nullptr;
+    }
+    
     size = decompressed_size;
     return decompressed_data;
 #endif
@@ -112,4 +120,22 @@ void AP_ROMFS::free(const uint8_t *data)
 #ifndef HAL_ROMFS_UNCOMPRESSED
     ::free(const_cast<uint8_t *>(data));
 #endif
+}
+
+/*
+  directory listing interface. Start with ofs=0. Returns pathnames
+  that match dirname prefix. Ends with nullptr return when no more
+  files found
+*/
+const char *AP_ROMFS::dir_list(const char *dirname, uint16_t &ofs)
+{
+    const size_t dlen = strlen(dirname);
+    for ( ; ofs < ARRAY_SIZE(files); ofs++) {
+        if (strncmp(dirname, files[ofs].filename, dlen) == 0 &&
+            files[ofs].filename[dlen] == '/') {
+            // found one
+            return files[ofs++].filename;
+        }
+    }
+    return nullptr;
 }

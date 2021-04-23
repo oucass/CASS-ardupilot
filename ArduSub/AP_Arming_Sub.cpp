@@ -65,12 +65,9 @@ bool AP_Arming_Sub::ins_checks(bool display_failure)
     // additional sub-specific checks
     if ((checks_to_perform & ARMING_CHECK_ALL) ||
         (checks_to_perform & ARMING_CHECK_INS)) {
-        if (!AP::ahrs().prearm_healthy()) {
-            const char *reason = AP::ahrs().prearm_failure_reason();
-            if (reason == nullptr) {
-                reason = "AHRS not healthy";
-            }
-            check_failed(ARMING_CHECK_INS, display_failure, "%s", reason);
+        char failure_msg[50] = {};
+        if (!AP::ahrs().pre_arm_check(false, failure_msg, sizeof(failure_msg))) {
+            check_failed(ARMING_CHECK_INS, display_failure, "AHRS: %s", failure_msg);
             return false;
         }
     }
@@ -139,8 +136,6 @@ bool AP_Arming_Sub::arm(AP_Arming::Method method, bool do_arming_checks)
     // finally actually arm the motors
     sub.motors.armed(true);
 
-    AP::logger().Write_Event(LogEvent::ARMED);
-
     // log flight mode in case it was changed while vehicle was disarmed
     AP::logger().Write_Mode(sub.control_mode, sub.control_mode_reason);
 
@@ -157,14 +152,14 @@ bool AP_Arming_Sub::arm(AP_Arming::Method method, bool do_arming_checks)
     return true;
 }
 
-bool AP_Arming_Sub::disarm()
+bool AP_Arming_Sub::disarm(const AP_Arming::Method method, bool do_disarm_checks)
 {
     // return immediately if we are already disarmed
     if (!sub.motors.armed()) {
         return false;
     }
 
-    if (!AP_Arming::disarm()) {
+    if (!AP_Arming::disarm(method, do_disarm_checks)) {
         return false;
     }
 
@@ -183,8 +178,6 @@ bool AP_Arming_Sub::disarm()
             }
         }
     }
-
-    AP::logger().Write_Event(LogEvent::DISARMED);
 
     // send disarm command to motors
     sub.motors.armed(false);

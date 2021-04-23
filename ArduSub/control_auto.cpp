@@ -23,7 +23,7 @@ bool Sub::auto_init()
         set_auto_yaw_mode(AUTO_YAW_HOLD);
     }
 
-    // initialise waypoint and spline controller
+    // initialise waypoint controller
     wp_nav.wp_and_spline_init();
 
     // clear guided limits
@@ -51,10 +51,6 @@ void Sub::auto_run()
 
     case Auto_Circle:
         auto_circle_run();
-        break;
-
-    case Auto_Spline:
-        auto_spline_run();
         break;
 
     case Auto_NavGuided:
@@ -94,7 +90,7 @@ void Sub::auto_wp_start(const Location& dest_loc)
     auto_mode = Auto_WP;
 
     // send target to waypoint controller
-    if (!wp_nav.set_wp_destination(dest_loc)) {
+    if (!wp_nav.set_wp_destination_loc(dest_loc)) {
         // failure to set destination can only be because of missing terrain data
         failsafe_terrain_on_event();
         return;
@@ -172,96 +168,13 @@ void Sub::auto_wp_run()
     }
 }
 
-// auto_spline_start - initialises waypoint controller to implement flying to a particular destination using the spline controller
-//  seg_end_type can be SEGMENT_END_STOP, SEGMENT_END_STRAIGHT or SEGMENT_END_SPLINE.  If Straight or Spline the next_destination should be provided
-void Sub::auto_spline_start(const Location& destination, bool stopped_at_start,
-                            AC_WPNav::spline_segment_end_type seg_end_type,
-                            const Location& next_destination)
-{
-    auto_mode = Auto_Spline;
-
-    // initialise wpnav
-    if (!wp_nav.set_spline_destination(destination, stopped_at_start, seg_end_type, next_destination)) {
-        // failure to set destination can only be because of missing terrain data
-        failsafe_terrain_on_event();
-        return;
-    }
-
-    // initialise yaw
-    // To-Do: reset the yaw only when the previous navigation command is not a WP.  this would allow removing the special check for ROI
-    if (auto_yaw_mode != AUTO_YAW_ROI) {
-        set_auto_yaw_mode(get_default_auto_yaw_mode(false));
-    }
-}
-
-// auto_spline_run - runs the auto spline controller
-//      called by auto_run at 100hz or more
-void Sub::auto_spline_run()
-{
-    // if not armed set throttle to zero and exit immediately
-    if (!motors.armed()) {
-        // To-Do: reset waypoint origin to current location because vehicle is probably on the ground so we don't want it lurching left or right on take-off
-        //    (of course it would be better if people just used take-off)
-        // Sub vehicles do not stabilize roll/pitch/yaw when disarmed
-        motors.set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
-        attitude_control.set_throttle_out(0,true,g.throttle_filt);
-        attitude_control.relax_attitude_controllers();
-        return;
-    }
-
-    // process pilot's yaw input
-    float target_yaw_rate = 0;
-    if (!failsafe.pilot_input) {
-        // get pilot's desired yaw rat
-        target_yaw_rate = get_pilot_desired_yaw_rate(channel_yaw->get_control_in());
-        if (!is_zero(target_yaw_rate)) {
-            set_auto_yaw_mode(AUTO_YAW_HOLD);
-        }
-    }
-
-    // set motors to full range
-    motors.set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
-
-    // run waypoint controller
-    wp_nav.update_spline();
-
-    float lateral_out, forward_out;
-    translate_wpnav_rp(lateral_out, forward_out);
-
-    // Send to forward/lateral outputs
-    motors.set_lateral(lateral_out);
-    motors.set_forward(forward_out);
-
-    // call z-axis position controller (wpnav should have already updated it's alt target)
-    pos_control.update_z_controller();
-
-    // get pilot desired lean angles
-    float target_roll, target_pitch;
-    get_pilot_desired_lean_angles(channel_roll->get_control_in(), channel_pitch->get_control_in(), target_roll, target_pitch, aparm.angle_max);
-
-    // call attitude controller
-    if (auto_yaw_mode == AUTO_YAW_HOLD) {
-        // roll & pitch from waypoint controller, yaw rate from pilot
-        attitude_control.input_euler_angle_roll_pitch_euler_rate_yaw(target_roll, target_pitch, target_yaw_rate);
-    } else {
-        // roll, pitch from waypoint controller, yaw heading from auto_heading()
-        attitude_control.input_euler_angle_roll_pitch_yaw(target_roll, target_pitch, get_auto_heading(), true);
-    }
-}
-
 // auto_circle_movetoedge_start - initialise waypoint controller to move to edge of a circle with it's center at the specified location
 //  we assume the caller has set the circle's circle with circle_nav.set_center()
 //  we assume the caller has performed all required GPS_ok checks
 void Sub::auto_circle_movetoedge_start(const Location &circle_center, float radius_m)
 {
-    // convert location to vector from ekf origin
-    Vector3f circle_center_neu;
-    if (!circle_center.get_vector_from_origin_NEU(circle_center_neu)) {
-        // default to current position and log error
-        circle_center_neu = inertial_nav.get_position();
-        AP::logger().Write_Error(LogErrorSubsystem::NAVIGATION, LogErrorCode::FAILED_CIRCLE_INIT);
-    }
-    circle_nav.set_center(circle_center_neu);
+    // set circle center
+    circle_nav.set_center(circle_center);
 
     // set circle radius
     if (!is_zero(radius_m)) {
@@ -279,18 +192,19 @@ void Sub::auto_circle_movetoedge_start(const Location &circle_center, float radi
         auto_mode = Auto_CircleMoveToEdge;
 
         // convert circle_edge_neu to Location
-        Location circle_edge(circle_edge_neu);
+        Location circle_edge(circle_edge_neu, Location::AltFrame::ABOVE_ORIGIN);
 
         // convert altitude to same as command
         circle_edge.set_alt_cm(circle_center.alt, circle_center.get_alt_frame());
 
         // initialise wpnav to move to edge of circle
-        if (!wp_nav.set_wp_destination(circle_edge)) {
+        if (!wp_nav.set_wp_destination_loc(circle_edge)) {
             // failure to set destination can only be because of missing terrain data
             failsafe_terrain_on_event();
         }
 
         // if we are outside the circle, point at the edge, otherwise hold yaw
+        const Vector3f &circle_center_neu = circle_nav.get_center();
         const Vector3f &curr_pos = inertial_nav.get_position();
         float dist_to_center = norm(circle_center_neu.x - curr_pos.x, circle_center_neu.y - curr_pos.y);
         if (dist_to_center > circle_nav.get_radius() && dist_to_center > 500) {
@@ -311,7 +225,7 @@ void Sub::auto_circle_start()
     auto_mode = Auto_Circle;
 
     // initialise circle controller
-    circle_nav.init(circle_nav.get_center());
+    circle_nav.init(circle_nav.get_center(), circle_nav.center_is_terrain_alt());
 }
 
 // auto_circle_run - circle in AUTO flight mode
@@ -319,7 +233,7 @@ void Sub::auto_circle_start()
 void Sub::auto_circle_run()
 {
     // call circle controller
-    circle_nav.update();
+    failsafe_terrain_set_status(circle_nav.update());
 
     float lateral_out, forward_out;
     translate_circle_nav_rp(lateral_out, forward_out);
@@ -367,15 +281,12 @@ bool Sub::auto_loiter_start()
     }
     auto_mode = Auto_Loiter;
 
-    Vector3f origin = inertial_nav.get_position();
-
     // calculate stopping point
     Vector3f stopping_point;
-    pos_control.get_stopping_point_xy(stopping_point);
-    pos_control.get_stopping_point_z(stopping_point);
+    wp_nav.get_wp_stopping_point(stopping_point);
 
     // initialise waypoint controller target to stopping point
-    wp_nav.set_wp_origin_and_destination(origin, stopping_point);
+    wp_nav.set_wp_destination(stopping_point);
 
     // hold yaw at current heading
     set_auto_yaw_mode(AUTO_YAW_HOLD);
@@ -431,7 +342,7 @@ void Sub::auto_loiter_run()
 
 // get_default_auto_yaw_mode - returns auto_yaw_mode based on WP_YAW_BEHAVIOR parameter
 // set rtl parameter to true if this is during an RTL
-uint8_t Sub::get_default_auto_yaw_mode(bool rtl)
+uint8_t Sub::get_default_auto_yaw_mode(bool rtl) const
 {
     switch (g.wp_yaw_behavior) {
 
@@ -541,14 +452,14 @@ void Sub::set_auto_yaw_roi(const Location &roi_location)
     if (roi_location.alt == 0 && roi_location.lat == 0 && roi_location.lng == 0) {
         // set auto yaw mode back to default assuming the active command is a waypoint command.  A more sophisticated method is required to ensure we return to the proper yaw control for the active command
         set_auto_yaw_mode(get_default_auto_yaw_mode(false));
-#if MOUNT == ENABLED
+#if HAL_MOUNT_ENABLED
         // switch off the camera tracking if enabled
         if (camera_mount.get_mode() == MAV_MOUNT_MODE_GPS_POINT) {
             camera_mount.set_mode_to_default();
         }
-#endif  // MOUNT == ENABLED
+#endif  // HAL_MOUNT_ENABLED
     } else {
-#if MOUNT == ENABLED
+#if HAL_MOUNT_ENABLED
         // check if mount type requires us to rotate the quad
         if (!camera_mount.has_pan_control()) {
             roi_WP = pv_location_to_vector(roi_location);
@@ -567,7 +478,7 @@ void Sub::set_auto_yaw_roi(const Location &roi_location)
         // if we have no camera mount aim the quad at the location
         roi_WP = pv_location_to_vector(roi_location);
         set_auto_yaw_mode(AUTO_YAW_ROI);
-#endif  // MOUNT == ENABLED
+#endif  // HAL_MOUNT_ENABLED
     }
 }
 
@@ -603,9 +514,12 @@ float Sub::get_auto_heading()
         float track_bearing = get_bearing_cd(wp_nav.get_wp_origin(), wp_nav.get_wp_destination());
 
         // Bearing from current position towards intermediate position target (centidegrees)
-        float desired_angle = pos_control.get_bearing_to_target();
-
-        float angle_error = wrap_180_cd(desired_angle - track_bearing);
+        const Vector2f target_vel_xy{pos_control.get_vel_target().x, pos_control.get_vel_target().y};
+        float angle_error = 0.0f;
+        if (target_vel_xy.length() >= pos_control.get_max_speed_xy() * 0.1f) {
+            const float desired_angle_cd = degrees(target_vel_xy.angle()) * 100.0f;
+            angle_error = wrap_180_cd(desired_angle_cd - track_bearing);
+        }
         float angle_limited = constrain_float(angle_error, -g.xtrack_angle_limit * 100.0f, g.xtrack_angle_limit * 100.0f);
         return wrap_360_cd(track_bearing + angle_limited);
     }
